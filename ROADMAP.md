@@ -83,4 +83,4 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [ ] Lint and coverage targets; example CI workflow
 
 ### Nice-to-haves
-- [ ] Documentation site with full guides and recipes
+- [ ] Documentation site with full guides and recipes (see `docs/`)
