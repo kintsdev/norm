@@ -32,6 +32,10 @@ func newPool(ctx context.Context, cfg *Config) (*pgxpool.Pool, error) {
 	if cfg.HealthCheckPeriod > 0 {
 		conf.HealthCheckPeriod = cfg.HealthCheckPeriod
 	}
+    if cfg.StatementCacheCapacity > 0 {
+        conf.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
+        conf.ConnConfig.StatementCacheCapacity = cfg.StatementCacheCapacity
+    }
 
 	pool, err := pgxpool.NewWithConfig(ctx, conf)
 	if err != nil {

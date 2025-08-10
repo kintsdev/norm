@@ -23,6 +23,7 @@ type Config struct {
 	ReadOnlyConnString string        // optional DSN for read replica(s)
 	RetryAttempts      int           // transient error retries (default 0 = no retry)
 	RetryBackoff       time.Duration // backoff between retries
+    StatementCacheCapacity int       // pgx per-conn statement cache capacity (0 = default)
 }
 
 // ConnString returns a PostgreSQL connection string compatible with pgx
