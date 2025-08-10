@@ -36,15 +36,15 @@ import (
 )
 
 type User struct {
-    ID        int64      `db:"id" nnorm:"primary_key,auto_increment"`
-    Email     string     `db:"email" nnorm:"unique,not_null,index,varchar(255)"`
-    Username  string     `db:"username" nnorm:"unique,not_null,varchar(50)"`
-    Password  string     `db:"password" nnorm:"not_null,varchar(255)"`
-    IsActive  bool       `db:"is_active" nnorm:"default:true"`
-    CreatedAt time.Time  `db:"created_at" nnorm:"not_null,default:now()"`
-    UpdatedAt time.Time  `db:"updated_at" nnorm:"not_null,default:now(),on_update:now()"`
-    DeletedAt *time.Time `db:"deleted_at" nnorm:"index"`
-    Version   int64      `db:"version" nnorm:"version"`
+    ID        int64      `db:"id" norm:"primary_key,auto_increment"`
+    Email     string     `db:"email" norm:"unique,not_null,index,varchar(255)"`
+    Username  string     `db:"username" norm:"unique,not_null,varchar(50)"`
+    Password  string     `db:"password" norm:"not_null,varchar(255)"`
+    IsActive  bool       `db:"is_active" norm:"default:true"`
+    CreatedAt time.Time  `db:"created_at" norm:"not_null,default:now()"`
+    UpdatedAt time.Time  `db:"updated_at" norm:"not_null,default:now(),on_update:now()"`
+    DeletedAt *time.Time `db:"deleted_at" norm:"index"`
+    Version   int64      `db:"version" norm:"version"`
 }
 
 func main() {
@@ -71,9 +71,9 @@ func main() {
 ### Struct Tag’leri (özet)
 
 - `db:"column_name"` kolon adını belirler; boşsa snake_case kullanılır
-- `nnorm:"primary_key"`, `auto_increment`, `unique`, `not_null`, `default:now()`, `index`, `on_update:now()`, `version`
-- `nnorm:"fk:other_table(other_id)"` yabancı anahtar
-- `nnorm:"rename:old_column"` kolon rename diff’i için
+- `norm:"primary_key"`, `auto_increment`, `unique`, `not_null`, `default:now()`, `index`, `on_update:now()`, `version`
+- `norm:"fk:other_table(other_id)"` yabancı anahtar
+- `norm:"rename:old_column"` kolon rename diff’i için
 - Tip override: `varchar(50)`, `text`, `timestamptz`, vb.
 
 ### Migration
