@@ -102,6 +102,14 @@ func (kn *KintsNorm) AutoMigrate(models ...any) error {
 	return kn.migrator.AutoMigrate(context.Background(), models...)
 }
 
+// AutoMigrateWithOptions allows enabling destructive ops (e.g., drop columns)
+func (kn *KintsNorm) AutoMigrateWithOptions(ctx context.Context, opts migration.ApplyOptions, models ...any) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return kn.migrator.AutoMigrateWithOptions(ctx, opts, models...)
+}
+
 // MigrateUpDir applies pending .up.sql migrations from a directory
 func (kn *KintsNorm) MigrateUpDir(ctx context.Context, dir string) error {
 	if ctx == nil {

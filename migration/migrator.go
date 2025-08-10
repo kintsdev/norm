@@ -30,9 +30,10 @@ func (m *Migrator) SetManualOptions(opts ManualOptions) { m.manualOpts = opts }
 
 // PlanResult is a preview of migration operations
 type PlanResult struct {
-	Statements       []string
-	UnsafeStatements []string
-	Warnings         []string
+	Statements            []string
+	UnsafeStatements      []string
+	Warnings              []string
+	DestructiveStatements []string
 }
 
 // Plan computes a safe migration plan for given models (public schema)
@@ -71,8 +72,10 @@ func (m *Migrator) Plan(ctx context.Context, models ...any) (PlanResult, error) 
 		return plan, rows.Err()
 	}
 
+	modelTables := map[string]struct{}{}
 	for _, model := range models {
 		mi := parseModel(model)
+		modelTables[mi.TableName] = struct{}{}
 		if _, ok := existing[mi.TableName]; !ok {
 			sqls := generateCreateTableSQL(mi)
 			plan.Statements = append(plan.Statements, sqls.Statements...)
@@ -121,6 +124,29 @@ func (m *Migrator) Plan(ctx context.Context, models ...any) (PlanResult, error) 
 			plan.Statements = append(plan.Statements, sqls.Statements[1:]...)
 		}
 	}
+	// destructive: drop columns that exist in DB but not in model (opt-in apply)
+	for tbl, cols := range existing {
+		if _, ok := modelTables[tbl]; !ok {
+			continue // we do not drop entire tables via auto plan
+		}
+		// build set of expected columns from model
+		expected := map[string]struct{}{}
+		for _, model := range models {
+			mi := parseModel(model)
+			if mi.TableName != tbl {
+				continue
+			}
+			for _, f := range mi.Fields {
+				expected[strings.ToLower(f.DBName)] = struct{}{}
+			}
+		}
+		for cn := range cols {
+			lcn := strings.ToLower(cn)
+			if _, ok := expected[lcn]; !ok {
+				plan.DestructiveStatements = append(plan.DestructiveStatements, fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", quoteIdent(tbl), quoteIdent(cn)))
+			}
+		}
+	}
 	return plan, nil
 }
 
@@ -147,6 +173,60 @@ func (m *Migrator) AutoMigrate(ctx context.Context, models ...any) error {
 			return err
 		}
 		allStmts = append(allStmts, s)
+	}
+	checksum := computeChecksum(strings.Join(allStmts, ";"))
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE checksum = $1)`, checksum).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		var maxVersion int64
+		if err := tx.QueryRow(ctx, `SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&maxVersion); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO schema_migrations(version, checksum) VALUES($1, $2)`, maxVersion+1, checksum); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// ApplyOptions controls execution of destructive statements
+type ApplyOptions struct {
+	AllowDropColumns bool
+}
+
+// AutoMigrateWithOptions applies plan with additional options (e.g., allow drops)
+func (m *Migrator) AutoMigrateWithOptions(ctx context.Context, opts ApplyOptions, models ...any) error {
+	plan, err := m.Plan(ctx, models...)
+	if err != nil {
+		return err
+	}
+	tx, err := m.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('github.com/kintsdev/norm-migrate'))`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version BIGINT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), checksum TEXT)`); err != nil {
+		return err
+	}
+	allStmts := make([]string, 0, len(plan.Statements)+len(plan.DestructiveStatements))
+	for _, s := range plan.Statements {
+		if _, err := tx.Exec(ctx, s); err != nil {
+			return err
+		}
+		allStmts = append(allStmts, s)
+	}
+	if opts.AllowDropColumns {
+		for _, s := range plan.DestructiveStatements {
+			if _, err := tx.Exec(ctx, s); err != nil {
+				return err
+			}
+			allStmts = append(allStmts, s)
+		}
 	}
 	checksum := computeChecksum(strings.Join(allStmts, ";"))
 	var exists bool

@@ -23,7 +23,8 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [x] Manual migrations: file-based SQL (Up/Down)
 - [ ] Go-based migration helpers (functions)
 - [x] Rollback: down-runner with safety gates
-- [ ] Drop/rename table/column plan with explicit opt-in guards
+- [x] Drop/rename column plan (diff) with explicit opt-in guards (apply-time)
+- [ ] Table drop/rename planning (explicit opt-in)
 - [ ] Index/constraint change and drop diffing
 - [ ] Detailed plan formatting (grouping by table, severity)
 
