@@ -54,7 +54,7 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 
 ### Read/Write Splitting & Caching
 
-- [x] Optional read pool via `ReadOnlyConnString` + `QueryRead()`
+- [x] Optional read pool via `ReadOnlyConnString` + `QueryRead()` (e2e covered)
 - [ ] Auto read routing + overrides
 - [ ] Cache integration hooks (read-through/write-through)
 - [ ] Cache invalidation on write/tx commit
@@ -79,7 +79,8 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [x] Makefile to run Postgres in Docker + e2e suite
 - [x] Comprehensive e2e tests for migrations, CRUD, soft delete, tx, builder, pagination, DSL, struct ops
 - [x] Migration diff tests (rename/type/nullability) and quoting
-- [ ] E2E tests for read/write splitting + retry policies (idempotency cases)
+- [x] E2E tests for read pool via `QueryRead()`
+- [ ] E2E tests for auto read routing + retry policies (idempotency cases)
 - [ ] Lint and coverage targets; example CI workflow
 
 ### Nice-to-haves
