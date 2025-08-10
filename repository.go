@@ -81,6 +81,12 @@ func (r *repo[T]) Create(ctx context.Context, entity *T) error {
 	if entity == nil {
 		return &ORMError{Code: ErrCodeValidation, Message: "nil entity"}
 	}
+	// model hook: BeforeCreate
+	if bc, ok := any(entity).(BeforeCreate); ok {
+		if err := bc.BeforeCreate(ctx); err != nil {
+			return err
+		}
+	}
 	execFn := func() error {
 		val := reflect.Indirect(reflect.ValueOf(entity))
 		typ := val.Type()
@@ -125,9 +131,21 @@ func (r *repo[T]) Create(ctx context.Context, entity *T) error {
 		return err
 	}
 	if r.kn != nil {
-		return r.kn.withRetry(ctx, execFn)
+		if err := r.kn.withRetry(ctx, execFn); err != nil {
+			return err
+		}
+	} else {
+		if err := execFn(); err != nil {
+			return err
+		}
 	}
-	return execFn()
+	// model hook: AfterCreate
+	if ac, ok := any(entity).(AfterCreate); ok {
+		if err := ac.AfterCreate(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *repo[T]) CreateBatch(ctx context.Context, entities []*T) error {
@@ -164,6 +182,12 @@ func (r *repo[T]) GetByID(ctx context.Context, id any) (*T, error) {
 }
 
 func (r *repo[T]) Update(ctx context.Context, entity *T) error {
+	// model hook: BeforeUpdate
+	if bu, ok := any(entity).(BeforeUpdate); ok {
+		if err := bu.BeforeUpdate(ctx); err != nil {
+			return err
+		}
+	}
 	val := reflect.Indirect(reflect.ValueOf(entity))
 	typ := val.Type()
 	mapper := core.StructMapper(typ)
@@ -225,7 +249,16 @@ func (r *repo[T]) Update(ctx context.Context, entity *T) error {
 	args = append(args, id)
 	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = $%d", r.tableName(), strings.Join(sets, ", "), mapper.PrimaryColumn, idx)
 	_, err := r.exec.Exec(ctx, query, args...)
-	return err
+	if err != nil {
+		return err
+	}
+	// model hook: AfterUpdate
+	if au, ok := any(entity).(AfterUpdate); ok {
+		if err := au.AfterUpdate(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *repo[T]) UpdatePartial(ctx context.Context, id any, fields map[string]any) error {
@@ -271,9 +304,32 @@ func (r *repo[T]) UpdatePartial(ctx context.Context, id any, fields map[string]a
 }
 
 func (r *repo[T]) Delete(ctx context.Context, id any) error {
+	// dispatch hooks on zero-value model if implemented
+	var t T
+	if bd, ok := any(&t).(BeforeDelete); ok {
+		if err := bd.BeforeDelete(ctx, id); err != nil {
+			return err
+		}
+	} else if bdv, ok := any(t).(BeforeDelete); ok {
+		if err := bdv.BeforeDelete(ctx, id); err != nil {
+			return err
+		}
+	}
 	query := fmt.Sprintf("DELETE FROM %s WHERE id = $1", r.tableName())
 	_, err := r.exec.Exec(ctx, query, id)
-	return err
+	if err != nil {
+		return err
+	}
+	if ad, ok := any(&t).(AfterDelete); ok {
+		if err := ad.AfterDelete(ctx, id); err != nil {
+			return err
+		}
+	} else if adv, ok := any(t).(AfterDelete); ok {
+		if err := adv.AfterDelete(ctx, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *repo[T]) SoftDelete(ctx context.Context, id any) error {
@@ -282,10 +338,31 @@ func (r *repo[T]) SoftDelete(ctx context.Context, id any) error {
 	if !core.ModelHasSoftDelete(reflect.TypeOf(t)) {
 		return &ORMError{Code: ErrCodeValidation, Message: "soft delete not supported: missing deleted_at column"}
 	}
+	if bsd, ok := any(&t).(BeforeSoftDelete); ok {
+		if err := bsd.BeforeSoftDelete(ctx, id); err != nil {
+			return err
+		}
+	} else if bsdv, ok := any(t).(BeforeSoftDelete); ok {
+		if err := bsdv.BeforeSoftDelete(ctx, id); err != nil {
+			return err
+		}
+	}
 	// expects a deleted_at column
 	query := fmt.Sprintf("UPDATE %s SET deleted_at = NOW() WHERE id = $1", r.tableName())
 	_, err := r.exec.Exec(ctx, query, id)
-	return err
+	if err != nil {
+		return err
+	}
+	if asd, ok := any(&t).(AfterSoftDelete); ok {
+		if err := asd.AfterSoftDelete(ctx, id); err != nil {
+			return err
+		}
+	} else if asdv, ok := any(t).(AfterSoftDelete); ok {
+		if err := asdv.AfterSoftDelete(ctx, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *repo[T]) SoftDeleteAll(ctx context.Context) (int64, error) {
@@ -306,9 +383,30 @@ func (r *repo[T]) Restore(ctx context.Context, id any) error {
 	if !core.ModelHasSoftDelete(reflect.TypeOf(t)) {
 		return &ORMError{Code: ErrCodeValidation, Message: "restore not supported: missing deleted_at column"}
 	}
+	if br, ok := any(&t).(BeforeRestore); ok {
+		if err := br.BeforeRestore(ctx, id); err != nil {
+			return err
+		}
+	} else if brv, ok := any(t).(BeforeRestore); ok {
+		if err := brv.BeforeRestore(ctx, id); err != nil {
+			return err
+		}
+	}
 	query := fmt.Sprintf("UPDATE %s SET deleted_at = NULL WHERE id = $1", r.tableName())
 	_, err := r.exec.Exec(ctx, query, id)
-	return err
+	if err != nil {
+		return err
+	}
+	if ar, ok := any(&t).(AfterRestore); ok {
+		if err := ar.AfterRestore(ctx, id); err != nil {
+			return err
+		}
+	} else if arv, ok := any(t).(AfterRestore); ok {
+		if err := arv.AfterRestore(ctx, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *repo[T]) PurgeTrashed(ctx context.Context) (int64, error) {
@@ -316,12 +414,31 @@ func (r *repo[T]) PurgeTrashed(ctx context.Context) (int64, error) {
 	if !core.ModelHasSoftDelete(reflect.TypeOf(t)) {
 		return 0, &ORMError{Code: ErrCodeValidation, Message: "purge not supported: missing deleted_at column"}
 	}
+	if bp, ok := any(&t).(BeforePurgeTrashed); ok {
+		if err := bp.BeforePurgeTrashed(ctx); err != nil {
+			return 0, err
+		}
+	} else if bpv, ok := any(t).(BeforePurgeTrashed); ok {
+		if err := bpv.BeforePurgeTrashed(ctx); err != nil {
+			return 0, err
+		}
+	}
 	query := fmt.Sprintf("DELETE FROM %s WHERE deleted_at IS NOT NULL", r.tableName())
 	tag, err := r.exec.Exec(ctx, query)
 	if err != nil {
 		return 0, err
 	}
-	return int64(tag.RowsAffected()), nil
+	affected := int64(tag.RowsAffected())
+	if ap, ok := any(&t).(AfterPurgeTrashed); ok {
+		if err := ap.AfterPurgeTrashed(ctx, affected); err != nil {
+			return 0, err
+		}
+	} else if apv, ok := any(t).(AfterPurgeTrashed); ok {
+		if err := apv.AfterPurgeTrashed(ctx, affected); err != nil {
+			return 0, err
+		}
+	}
+	return affected, nil
 }
 
 func (r *repo[T]) Find(ctx context.Context, conditions ...Condition) ([]*T, error) {
@@ -522,6 +639,12 @@ func (r *repo[T]) extractValuesByColumns(entity *T, columns []string) ([]any, er
 
 // Upsert performs INSERT ... ON CONFLICT (...) DO UPDATE SET col = EXCLUDED.col for given columns
 func (r *repo[T]) Upsert(ctx context.Context, entity *T, conflictCols []string, updateCols []string) error {
+	// model hook: BeforeUpsert
+	if bu, ok := any(entity).(BeforeUpsert); ok {
+		if err := bu.BeforeUpsert(ctx); err != nil {
+			return err
+		}
+	}
 	// Build from reflection
 	val := reflect.Indirect(reflect.ValueOf(entity))
 	typ := val.Type()
@@ -553,7 +676,16 @@ func (r *repo[T]) Upsert(ctx context.Context, entity *T, conflictCols []string, 
 	}
 	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO UPDATE SET %s", r.tableName(), strings.Join(cols, ", "), strings.Join(placeholders, ", "), strings.Join(conflictCols, ", "), strings.Join(setParts, ", "))
 	_, err := r.exec.Exec(ctx, query, args...)
-	return err
+	if err != nil {
+		return err
+	}
+	// model hook: AfterUpsert
+	if au, ok := any(entity).(AfterUpsert); ok {
+		if err := au.AfterUpsert(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // onUpdateNowColumns returns a set of db column names that have orm tag on_update:now()
