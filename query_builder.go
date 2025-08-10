@@ -45,7 +45,21 @@ type QueryBuilder struct {
 	cacheKey   string
 	cacheTTL   time.Duration
 	invalidate []string
+	// logging
+	forceDebug bool
+	// soft delete scoping
+	qbSoftMode         qbSoftDeleteMode
+	modelHasSoftDelete bool
 }
+
+// qbSoftDeleteMode controls soft-delete scoping for QueryBuilder
+type qbSoftDeleteMode int
+
+const (
+	qbSoftModeDefault qbSoftDeleteMode = iota
+	qbSoftModeWithTrashed
+	qbSoftModeOnlyTrashed
+)
 
 // Query creates a new query builder
 func (kn *KintsNorm) Query() *QueryBuilder {
@@ -90,6 +104,8 @@ func quoteQualified(name string) string {
 // TableQ sets the table using quoted identifier(s) (supports schema-qualified like schema.table)
 func (qb *QueryBuilder) TableQ(name string) *QueryBuilder {
 	qb.table = quoteQualified(name)
+	// unknown model; do not assume soft-delete
+	qb.modelHasSoftDelete = false
 	return qb
 }
 
@@ -120,6 +136,12 @@ func (qb *QueryBuilder) UsePrimary() *QueryBuilder {
 	return qb
 }
 
+// Debug enables debug logging for this builder chain regardless of global LogMode
+func (qb *QueryBuilder) Debug() *QueryBuilder {
+	qb.forceDebug = true
+	return qb
+}
+
 // UseReadPool forces using the read pool for reads even if no auto routing is enabled
 // Note: Do not use this for writes; Exec/insert/update/delete should go to primary
 func (qb *QueryBuilder) UseReadPool() *QueryBuilder {
@@ -133,6 +155,8 @@ func (qb *QueryBuilder) UseReadPool() *QueryBuilder {
 
 func (qb *QueryBuilder) Table(name string) *QueryBuilder {
 	qb.table = name
+	// unknown model; do not assume soft-delete
+	qb.modelHasSoftDelete = false
 	return qb
 }
 
@@ -151,6 +175,7 @@ func (qb *QueryBuilder) Model(model any) *QueryBuilder {
 		t = t.Elem()
 	}
 	qb.table = core.ToSnakeCase(t.Name()) + "s"
+	qb.modelHasSoftDelete = core.ModelHasSoftDelete(t)
 	return qb
 }
 
@@ -268,6 +293,15 @@ func (qb *QueryBuilder) WithInvalidateKeys(keys ...string) *QueryBuilder {
 	return qb
 }
 
+// WithTrashed includes soft-deleted rows (deleted_at IS NOT NULL or NULL) in results
+func (qb *QueryBuilder) WithTrashed() *QueryBuilder { qb.qbSoftMode = qbSoftModeWithTrashed; return qb }
+
+// OnlyTrashed restricts to only soft-deleted rows (deleted_at IS NOT NULL)
+func (qb *QueryBuilder) OnlyTrashed() *QueryBuilder { qb.qbSoftMode = qbSoftModeOnlyTrashed; return qb }
+
+// Unscoped is an alias of WithTrashed (GORM-compatible naming)
+func (qb *QueryBuilder) Unscoped() *QueryBuilder { return qb.WithTrashed() }
+
 func (qb *QueryBuilder) buildSelect() (string, []any) {
 	if qb.isRaw {
 		return qb.raw, qb.args
@@ -285,16 +319,29 @@ func (qb *QueryBuilder) buildSelect() (string, []any) {
 		sb.WriteString(" ")
 		sb.WriteString(strings.Join(qb.joins, " "))
 	}
-	if len(qb.wheres) > 0 {
+	// collect where clauses including default soft-delete scoping for Model-based queries
+	whereClauses := make([]string, 0, len(qb.wheres)+1)
+	whereClauses = append(whereClauses, qb.wheres...)
+	if qb.modelHasSoftDelete {
+		switch qb.qbSoftMode {
+		case qbSoftModeOnlyTrashed:
+			whereClauses = append(whereClauses, "deleted_at IS NOT NULL")
+		case qbSoftModeWithTrashed:
+			// no default filter
+		default:
+			whereClauses = append(whereClauses, "deleted_at IS NULL")
+		}
+	}
+	if len(whereClauses) > 0 {
 		sb.WriteString(" WHERE ")
-		where := strings.Join(qb.wheres, " AND ")
+		where := strings.Join(whereClauses, " AND ")
 		where = sqlutil.ConvertQMarksToPgPlaceholders(where)
 		sb.WriteString(where)
 	}
 	// keyset
 	keyset := qb.buildKeysetPredicate()
 	if keyset != "" {
-		if len(qb.wheres) == 0 {
+		if len(whereClauses) == 0 {
 			sb.WriteString(" WHERE ")
 		} else {
 			sb.WriteString(" AND ")
@@ -335,10 +382,28 @@ func (qb *QueryBuilder) Find(ctx context.Context, dest any) error {
 	query, args := qb.buildSelect()
 	started := time.Now()
 	rows, err := qb.exec.Query(ctx, query, args...)
+	// logging governed by global mode or forced via Debug()
+	if qb.kn != nil && qb.kn.logger != nil {
+		switch qb.kn.logMode {
+		case LogDebug, LogInfo:
+			qb.kn.logger.Debug("query", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+		case LogWarn, LogError:
+			// no query-level log; errors will be logged when they occur
+		case LogSilent:
+			if qb.forceDebug {
+				qb.kn.logger.Debug("query", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+			}
+		}
+	}
 	if qb.kn.metrics != nil {
 		qb.kn.metrics.QueryDuration(time.Since(started), query)
 	}
 	if err != nil {
+		if qb.kn != nil && qb.kn.logger != nil {
+			if qb.kn.logMode != LogSilent || qb.forceDebug {
+				qb.kn.logger.Error("query_error", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "error", Value: err})
+			}
+		}
 		return wrapPgError(err, query, args)
 	}
 	defer rows.Close()
@@ -494,10 +559,26 @@ func (qb *QueryBuilder) Delete(ctx context.Context) (int64, error) {
 	query, args := qb.buildDelete()
 	started := time.Now()
 	tag, err := qb.exec.Exec(ctx, query, args...)
+	if qb.kn != nil && qb.kn.logger != nil {
+		switch qb.kn.logMode {
+		case LogDebug, LogInfo:
+			qb.kn.logger.Debug("exec", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+		case LogWarn, LogError:
+		case LogSilent:
+			if qb.forceDebug {
+				qb.kn.logger.Debug("exec", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+			}
+		}
+	}
 	if qb.kn.metrics != nil {
 		qb.kn.metrics.QueryDuration(time.Since(started), query)
 	}
 	if err != nil {
+		if qb.kn != nil && qb.kn.logger != nil {
+			if qb.kn.logMode != LogSilent || qb.forceDebug {
+				qb.kn.logger.Error("exec_error", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "error", Value: err})
+			}
+		}
 		return 0, err
 	}
 	if qb.kn.cache != nil && len(qb.invalidate) > 0 {
@@ -522,10 +603,26 @@ func (qb *QueryBuilder) Exec(ctx context.Context) error {
 	}
 	started := time.Now()
 	_, err := qb.exec.Exec(ctx, qb.raw, qb.args...)
+	if qb.kn != nil && qb.kn.logger != nil {
+		switch qb.kn.logMode {
+		case LogDebug, LogInfo:
+			qb.kn.logger.Debug("exec", Field{Key: "sql", Value: qb.raw}, Field{Key: "args", Value: qb.args}, Field{Key: "stmt", Value: inlineSQL(qb.raw, qb.args)})
+		case LogWarn, LogError:
+		case LogSilent:
+			if qb.forceDebug {
+				qb.kn.logger.Debug("exec", Field{Key: "sql", Value: qb.raw}, Field{Key: "args", Value: qb.args}, Field{Key: "stmt", Value: inlineSQL(qb.raw, qb.args)})
+			}
+		}
+	}
 	if qb.kn.metrics != nil {
 		qb.kn.metrics.QueryDuration(time.Since(started), qb.raw)
 	}
 	if err != nil {
+		if qb.kn != nil && qb.kn.logger != nil {
+			if qb.kn.logMode != LogSilent || qb.forceDebug {
+				qb.kn.logger.Error("exec_error", Field{Key: "sql", Value: qb.raw}, Field{Key: "args", Value: qb.args}, Field{Key: "error", Value: err})
+			}
+		}
 		return wrapPgError(err, qb.raw, qb.args)
 	}
 	if qb.kn.cache != nil && len(qb.invalidate) > 0 {
@@ -623,10 +720,26 @@ func (qb *QueryBuilder) ExecInsert(ctx context.Context, dest any) (int64, error)
 	if len(qb.returningCols) == 0 {
 		started := time.Now()
 		tag, err := qb.exec.Exec(ctx, query, args...)
+		if qb.kn != nil && qb.kn.logger != nil {
+			switch qb.kn.logMode {
+			case LogDebug, LogInfo:
+				qb.kn.logger.Debug("exec", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+			case LogWarn, LogError:
+			case LogSilent:
+				if qb.forceDebug {
+					qb.kn.logger.Debug("exec", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+				}
+			}
+		}
 		if qb.kn.metrics != nil {
 			qb.kn.metrics.QueryDuration(time.Since(started), query)
 		}
 		if err != nil {
+			if qb.kn != nil && qb.kn.logger != nil {
+				if qb.kn.logMode != LogSilent || qb.forceDebug {
+					qb.kn.logger.Error("exec_error", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "error", Value: err})
+				}
+			}
 			return 0, wrapPgError(err, query, args)
 		}
 		if qb.kn.cache != nil && len(qb.invalidate) > 0 {
@@ -637,10 +750,26 @@ func (qb *QueryBuilder) ExecInsert(ctx context.Context, dest any) (int64, error)
 	// RETURNING path: scan into dest like Find
 	started := time.Now()
 	rows, err := qb.exec.Query(ctx, query, args...)
+	if qb.kn != nil && qb.kn.logger != nil {
+		switch qb.kn.logMode {
+		case LogDebug, LogInfo:
+			qb.kn.logger.Debug("query", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+		case LogWarn, LogError:
+		case LogSilent:
+			if qb.forceDebug {
+				qb.kn.logger.Debug("query", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+			}
+		}
+	}
 	if qb.kn.metrics != nil {
 		qb.kn.metrics.QueryDuration(time.Since(started), query)
 	}
 	if err != nil {
+		if qb.kn != nil && qb.kn.logger != nil {
+			if qb.kn.logMode != LogSilent || qb.forceDebug {
+				qb.kn.logger.Error("query_error", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "error", Value: err})
+			}
+		}
 		return 0, wrapPgError(err, query, args)
 	}
 	defer rows.Close()
@@ -740,10 +869,26 @@ func (qb *QueryBuilder) ExecUpdate(ctx context.Context, dest any) (int64, error)
 	}
 	started := time.Now()
 	rows, err := qb.exec.Query(ctx, query, args...)
+	if qb.kn != nil && qb.kn.logger != nil {
+		switch qb.kn.logMode {
+		case LogDebug, LogInfo:
+			qb.kn.logger.Debug("query", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+		case LogWarn, LogError:
+		case LogSilent:
+			if qb.forceDebug {
+				qb.kn.logger.Debug("query", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+			}
+		}
+	}
 	if qb.kn.metrics != nil {
 		qb.kn.metrics.QueryDuration(time.Since(started), query)
 	}
 	if err != nil {
+		if qb.kn != nil && qb.kn.logger != nil {
+			if qb.kn.logMode != LogSilent || qb.forceDebug {
+				qb.kn.logger.Error("query_error", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "error", Value: err})
+			}
+		}
 		return 0, wrapPgError(err, query, args)
 	}
 	defer rows.Close()

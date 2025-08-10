@@ -20,7 +20,7 @@ type Money struct {
 
 func main() {
 	cfg := &norm.Config{Host: "127.0.0.1", Port: 5432, Database: "postgres", Username: "postgres", Password: "postgres", SSLMode: "disable"}
-	kn, err := norm.New(cfg)
+	kn, err := norm.New(cfg, norm.WithLogger(norm.StdLogger{}), norm.WithLogMode(norm.LogSilent))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -31,23 +31,23 @@ func main() {
 	}
 
 	// Insert with builder
-	if _, err := kn.Query().Table("moneys").Insert("amount").Values(123123.45678901).ExecInsert(context.Background(), nil); err != nil {
+	if _, err := kn.Query().Debug().Table("moneys").Insert("amount").Values(123123.45678901).ExecInsert(context.Background(), nil); err != nil {
 		log.Fatal("insert", err)
 	}
 
 	var m Money
-	if err := kn.Query().Table("moneys").Where("id = ?", 1).First(context.Background(), &m); err != nil {
+	if err := kn.Query().Debug().Table("moneys").Where("id = ?", 1).First(context.Background(), &m); err != nil {
 		log.Fatal("first ", err)
 	}
 	fmt.Println(m)
 
 	// Update with builder
-	if _, err := kn.Query().Table("moneys").Where("id = ?", 1).Set("amount = ?", 123123.45678901).ExecUpdate(context.Background(), nil); err != nil {
+	if _, err := kn.Query().Debug().Table("moneys").Where("id = ?", 1).Set("amount = ?", 123123.45678901).ExecUpdate(context.Background(), nil); err != nil {
 		log.Fatal("update", err)
 	}
 
 	// soft delete
-	count, err := kn.Query().Table("moneys").Where("id = ?", 2).Delete(context.Background())
+	count, err := kn.Query().Debug().Table("moneys").Where("id = ?", 2).Delete(context.Background())
 	if err != nil {
 		log.Fatal("delete", err)
 	}
@@ -55,13 +55,13 @@ func main() {
 
 	// hard delete last
 	var last Money
-	if err := kn.Query().Table("moneys").OrderBy("created_at DESC").Last(context.Background(), &last); err != nil {
+	if err := kn.Query().Debug().Table("moneys").OrderBy("created_at DESC").Last(context.Background(), &last); err != nil {
 		log.Fatal("last", err)
 	}
 	fmt.Println("last", last)
 
 	// hard delete
-	count, err = kn.Query().Table("moneys").Where("id = ?", last.ID).HardDelete().Delete(context.Background())
+	count, err = kn.Query().Debug().Table("moneys").Where("id = ?", last.ID).HardDelete().Delete(context.Background())
 	if err != nil {
 		log.Fatal("hard delete", err)
 	}

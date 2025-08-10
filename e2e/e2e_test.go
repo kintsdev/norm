@@ -269,6 +269,87 @@ func TestHealthAndMigrate(t *testing.T) {
 	}
 }
 
+func TestQueryBuilderSoftDeleteScoping(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Ensure schema exists (idempotent)
+	if err := kn.AutoMigrate(&User{}); err != nil {
+		t.Fatalf("automigrate failed: %v", err)
+	}
+
+	repo := kintsnorm.NewRepository[User](kn)
+
+	// Create two users
+	ts := time.Now().UnixNano()
+	a := &User{Email: fmt.Sprintf("qb_a_%d@example.com", ts), Username: fmt.Sprintf("qb_a_%d", ts), Password: "x", IsActive: true}
+	b := &User{Email: fmt.Sprintf("qb_b_%d@example.com", ts), Username: fmt.Sprintf("qb_b_%d", ts), Password: "x", IsActive: true}
+	if err := repo.Create(ctx, a); err != nil {
+		t.Fatalf("create a: %v", err)
+	}
+	if err := repo.Create(ctx, b); err != nil {
+		t.Fatalf("create b: %v", err)
+	}
+
+	// Fetch to get IDs
+	if _, err := repo.FindOne(ctx, kintsnorm.Condition{Expr: "email = ?", Args: []any{a.Email}}); err != nil {
+		t.Fatalf("find a: %v", err)
+	}
+	bf, err := repo.FindOne(ctx, kintsnorm.Condition{Expr: "email = ?", Args: []any{b.Email}})
+	if err != nil {
+		t.Fatalf("find b: %v", err)
+	}
+
+	// Soft delete b using QueryBuilder
+	if _, err := kn.Query().Model(&User{}).Where("id = ?", bf.ID).Delete(ctx); err != nil {
+		t.Fatalf("qb soft delete: %v", err)
+	}
+
+	// Default: should NOT return soft-deleted row
+	var got User
+	if err := kn.Model(&User{}).Where("id = ?", bf.ID).First(ctx, &got); err == nil {
+		t.Fatalf("default scope should hide soft-deleted row")
+	}
+
+	// WithTrashed/Unscoped: should return
+	if err := kn.Model(&User{}).WithTrashed().Where("id = ?", bf.ID).First(ctx, &got); err != nil {
+		t.Fatalf("with trashed should find: %v", err)
+	}
+	if err := kn.Model(&User{}).Unscoped().Where("id = ?", bf.ID).First(ctx, &got); err != nil {
+		t.Fatalf("unscoped should find: %v", err)
+	}
+
+	// OnlyTrashed: should return
+	if err := kn.Model(&User{}).OnlyTrashed().Where("id = ?", bf.ID).First(ctx, &got); err != nil {
+		t.Fatalf("only trashed should find: %v", err)
+	}
+
+	// Find list checks
+	var list []User
+	if err := kn.Model(&User{}).Where("email IN (?, ?)", a.Email, b.Email).Find(ctx, &list); err != nil {
+		t.Fatalf("default find: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("default find should return 1 active, got %d", len(list))
+	}
+
+	list = nil
+	if err := kn.Model(&User{}).WithTrashed().Where("email IN (?, ?)", a.Email, b.Email).Find(ctx, &list); err != nil {
+		t.Fatalf("with trashed find: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("with trashed should return 2, got %d", len(list))
+	}
+
+	list = nil
+	if err := kn.Model(&User{}).OnlyTrashed().Where("email IN (?, ?)", a.Email, b.Email).Find(ctx, &list); err != nil {
+		t.Fatalf("only trashed find: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("only trashed should return 1, got %d", len(list))
+	}
+}
+
 func TestRepositoryCRUDAndSoftDelete(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -1478,7 +1559,7 @@ func TestEagerAndLazyLoadHelpers(t *testing.T) {
 	// Eager load
 	set := func(p *userWithProfiles, children []*Profile) { p.Profiles = children }
 	getID := func(p *userWithProfiles) any { return p.ID }
-	if err := kintsnorm.EagerLoadMany[userWithProfiles, Profile](ctx, kn, ups, getID, "user_id", set); err != nil {
+	if err := kintsnorm.EagerLoadMany(ctx, kn, ups, getID, "user_id", set); err != nil {
 		t.Fatalf("eager load: %v", err)
 	}
 	if len(ups[0].Profiles) != 2 || len(ups[1].Profiles) != 1 {
