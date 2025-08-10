@@ -14,7 +14,7 @@ func generateCreateTableSQL(mi modelInfo) createTableSQL {
 	idxs := []string{}
 	var pk string
 	for _, f := range mi.Fields {
-		col := fmt.Sprintf("%s %s", f.DBName, normalizeType(f))
+        col := fmt.Sprintf("%s %s", quoteIdent(f.DBName), normalizeType(f))
 		if f.NotNull {
 			col += " NOT NULL"
 		}
@@ -29,22 +29,25 @@ func generateCreateTableSQL(mi modelInfo) createTableSQL {
 			pk = f.DBName
 		}
 		if f.Unique {
-			idxs = append(idxs, fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS idx_%s_%s ON %s(%s)", mi.TableName, f.DBName, mi.TableName, f.DBName))
+            idxs = append(idxs, fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s(%s)",
+                quoteIdent(fmt.Sprintf("idx_%s_%s", mi.TableName, f.DBName)), quoteIdent(mi.TableName), quoteIdent(f.DBName)))
 		}
 		if f.Index && !f.Unique {
-			idxs = append(idxs, fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_%s ON %s(%s)", mi.TableName, f.DBName, mi.TableName, f.DBName))
+            idxs = append(idxs, fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s(%s)",
+                quoteIdent(fmt.Sprintf("idx_%s_%s", mi.TableName, f.DBName)), quoteIdent(mi.TableName), quoteIdent(f.DBName)))
 		}
 		// foreign key constraints
 		if f.FKTable != "" && f.FKColumn != "" {
-			idxs = append(idxs, fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT IF NOT EXISTS fk_%s_%s FOREIGN KEY (%s) REFERENCES %s(%s)", mi.TableName, mi.TableName, f.DBName, f.DBName, f.FKTable, f.FKColumn))
+            idxs = append(idxs, fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT IF NOT EXISTS %s FOREIGN KEY (%s) REFERENCES %s(%s)",
+                quoteIdent(mi.TableName), quoteIdent(fmt.Sprintf("fk_%s_%s", mi.TableName, f.DBName)), quoteIdent(f.DBName), quoteIdent(f.FKTable), quoteIdent(f.FKColumn)))
 		}
 	}
 	if pk != "" {
-		cols = append(cols, fmt.Sprintf("PRIMARY KEY (%s)", pk))
+        cols = append(cols, fmt.Sprintf("PRIMARY KEY (%s)", quoteIdent(pk)))
 	}
 	sb := strings.Builder{}
 	sb.WriteString("CREATE TABLE IF NOT EXISTS ")
-	sb.WriteString(mi.TableName)
+    sb.WriteString(quoteIdent(mi.TableName))
 	sb.WriteString(" (")
 	sb.WriteString(strings.Join(cols, ", "))
 	sb.WriteString(")")

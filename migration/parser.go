@@ -29,6 +29,16 @@ type modelInfo struct {
 	Fields    []fieldTag
 }
 
+// quoteIdent wraps an identifier with double quotes to avoid reserved word collisions
+func quoteIdent(id string) string {
+	if id == "" {
+		return id
+	}
+	// naive: escape any embedded quotes by doubling
+	id = strings.ReplaceAll(id, "\"", "\"\"")
+	return "\"" + id + "\""
+}
+
 func toSnakeCase(s string) string {
 	var out []rune
 	for i, r := range s {
