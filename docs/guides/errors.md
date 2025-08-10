@@ -11,6 +11,7 @@ Error codes and typical sources:
 - ErrCodeTransaction: serialization failures (PG 40001), context canceled, tx errors
 - ErrCodeMigration: migration-specific errors
 - ErrCodeValidation: bad inputs (wrong dest type, missing OrderBy for Last, etc.)
+ - ErrCodeInvalidColumn: unknown/undefined column (PG 42703 or API-level column checks)
 
 PostgreSQL mapping (subset):
 
@@ -36,6 +37,8 @@ if err != nil {
       // return 409
     case norm.ErrCodeConstraint:
       // 422 validation
+    case norm.ErrCodeInvalidColumn:
+      // 400-level invalid field/column
     case norm.ErrCodeConnection:
       // 503 retryable
     }

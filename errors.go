@@ -18,6 +18,8 @@ const (
 	ErrCodeTransaction
 	ErrCodeMigration
 	ErrCodeValidation
+	// Specific validation subtypes
+	ErrCodeInvalidColumn
 )
 
 // ORMError is a structured error for norm
@@ -66,10 +68,12 @@ func mapPgErrorCode(pgCode string) ErrorCode {
 		"57P03", // cannot_connect_now
 		"53300": // too_many_connections
 		return ErrCodeConnection
+	// specific invalid column
+	case "42703": // undefined_column
+		return ErrCodeInvalidColumn
 	// validation / syntax / undefined objects / cast issues
 	case "42601", // syntax_error
 		"42883", // undefined_function
-		"42703", // undefined_column
 		"42P01", // undefined_table
 		"22P02", // invalid_text_representation
 		"22001": // string_data_right_truncation

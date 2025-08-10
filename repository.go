@@ -633,7 +633,7 @@ func (r *repo[T]) extractValuesByColumns(entity *T, columns []string) ([]any, er
 	for i, col := range columns {
 		fi, ok := mapper.FieldsByColumn[strings.ToLower(col)]
 		if !ok {
-			return nil, &ORMError{Code: ErrCodeValidation, Message: fmt.Sprintf("unknown column: %s", col)}
+			return nil, &ORMError{Code: ErrCodeInvalidColumn, Message: fmt.Sprintf("unknown column: %s", col)}
 		}
 		out[i] = val.FieldByIndex(fi.Index).Interface()
 	}
