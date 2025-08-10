@@ -36,13 +36,13 @@ func main() {
 	}
 
 	var m Money
-	if err := kn.Query().Table("moneys").Where("id = ?", 2).First(context.Background(), &m); err != nil {
+	if err := kn.Query().Table("moneys").Where("id = ?", 1).First(context.Background(), &m); err != nil {
 		log.Fatal("first ", err)
 	}
 	fmt.Println(m)
 
 	// Update with builder
-	if _, err := kn.Query().Table("moneys").Where("id = ?", 2).Set("amount = ?", 123123.45678901).ExecUpdate(context.Background(), nil); err != nil {
+	if _, err := kn.Query().Table("moneys").Where("id = ?", 1).Set("amount = ?", 123123.45678901).ExecUpdate(context.Background(), nil); err != nil {
 		log.Fatal("update", err)
 	}
 
@@ -50,6 +50,20 @@ func main() {
 	count, err := kn.Query().Table("moneys").Where("id = ?", 2).Delete(context.Background())
 	if err != nil {
 		log.Fatal("delete", err)
+	}
+	fmt.Println(count)
+
+	// hard delete last
+	var last Money
+	if err := kn.Query().Table("moneys").OrderBy("created_at DESC").Last(context.Background(), &last); err != nil {
+		log.Fatal("last", err)
+	}
+	fmt.Println("last", last)
+
+	// hard delete
+	count, err = kn.Query().Table("moneys").Where("id = ?", last.ID).HardDelete().Delete(context.Background())
+	if err != nil {
+		log.Fatal("hard delete", err)
 	}
 	fmt.Println(count)
 
