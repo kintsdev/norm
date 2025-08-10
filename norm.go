@@ -102,6 +102,22 @@ func (kn *KintsNorm) AutoMigrate(models ...any) error {
 	return kn.migrator.AutoMigrate(context.Background(), models...)
 }
 
+// MigrateUpDir applies pending .up.sql migrations from a directory
+func (kn *KintsNorm) MigrateUpDir(ctx context.Context, dir string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return kn.migrator.MigrateUpDir(ctx, dir)
+}
+
+// MigrateDownDir rolls back the last N migrations using .down.sql files
+func (kn *KintsNorm) MigrateDownDir(ctx context.Context, dir string, steps int) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return kn.migrator.MigrateDownDir(ctx, dir, steps)
+}
+
 // Close gracefully closes the connection pool
 func (kn *KintsNorm) Close() error {
 	if kn.pool != nil {

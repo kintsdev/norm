@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -1029,6 +1030,87 @@ func TestErrorMapping_DuplicateAndFKViolation(t *testing.T) {
 	err = kn.Query().Raw("INSERT INTO fk_posts(user_id, body) VALUES(?,?)", 99999, "y").Exec(ctx)
 	if err == nil || !errors.As(err, &ormErr) || ormErr.Code != kintsnorm.ErrCodeConstraint {
 		t.Fatalf("expected constraint code, got %#v", err)
+	}
+}
+
+func TestManualMigrationsUpDown(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	// ensure clean start
+	_, _ = kn.Pool().Exec(ctx, `DROP TABLE IF EXISTS manual_e2e`)
+
+	dir := t.TempDir()
+	mustWrite := func(name, sql string) {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(sql), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	// Use high version numbers to avoid collision with automigrate
+	mustWrite("1000001_init.up.sql", `CREATE TABLE manual_e2e (id BIGINT PRIMARY KEY, name TEXT)`)
+	mustWrite("1000001_init.down.sql", `DROP TABLE manual_e2e`)
+	mustWrite("1000002_addcol.up.sql", `ALTER TABLE manual_e2e ADD COLUMN age INTEGER`)
+	mustWrite("1000002_addcol.down.sql", `ALTER TABLE manual_e2e DROP COLUMN age`)
+
+	// capture migration count before
+	var before int
+	if err := kn.Pool().QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&before); err != nil {
+		// table might not exist yet; create it lazily by running a no-op automigrate
+		_ = kn.AutoMigrate(&User{})
+		if err2 := kn.Pool().QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&before); err2 != nil {
+			t.Fatalf("schema_migrations count before: %v", err2)
+		}
+	}
+
+	if err := kn.MigrateUpDir(ctx, dir); err != nil {
+		t.Fatalf("migrate up dir failed: %v", err)
+	}
+
+	// table exists
+	var reg *string
+	if err := kn.Pool().QueryRow(ctx, `select to_regclass('public.manual_e2e')`).Scan(&reg); err != nil {
+		t.Fatalf("regclass manual_e2e: %v", err)
+	}
+	if reg == nil || *reg != "manual_e2e" {
+		t.Fatalf("manual_e2e table not found")
+	}
+	// age column exists
+	var c int
+	if err := kn.Pool().QueryRow(ctx, `SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='manual_e2e' AND column_name='age'`).Scan(&c); err != nil {
+		t.Fatalf("check age column: %v", err)
+	}
+	if c != 1 {
+		t.Fatalf("expected age column to exist, got %d", c)
+	}
+	// migration rows increased by 2
+	var afterUp int
+	if err := kn.Pool().QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&afterUp); err != nil {
+		t.Fatalf("schema_migrations after up: %v", err)
+	}
+	if afterUp < before+2 {
+		t.Fatalf("expected at least +2 migration rows, before=%d after=%d", before, afterUp)
+	}
+
+	// down one step -> drop age column
+	if err := kn.MigrateDownDir(ctx, dir, 1); err != nil {
+		t.Fatalf("migrate down 1 failed: %v", err)
+	}
+	if err := kn.Pool().QueryRow(ctx, `SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='manual_e2e' AND column_name='age'`).Scan(&c); err != nil {
+		t.Fatalf("check age after down: %v", err)
+	}
+	if c != 0 {
+		t.Fatalf("expected age column dropped, got %d", c)
+	}
+
+	// down second step -> drop table
+	if err := kn.MigrateDownDir(ctx, dir, 1); err != nil {
+		t.Fatalf("migrate down 2 failed: %v", err)
+	}
+	if err := kn.Pool().QueryRow(ctx, `select to_regclass('public.manual_e2e')`).Scan(&reg); err != nil {
+		t.Fatalf("regclass after full down: %v", err)
+	}
+	if reg != nil {
+		t.Fatalf("expected manual_e2e to be dropped, reg=%v", *reg)
 	}
 }
 
