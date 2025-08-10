@@ -227,6 +227,11 @@ func mapGoTypeToPgType(t reflect.Type, ormTag string) string {
 		t = t.Elem()
 	}
 	switch t.Kind() {
+	case reflect.Array:
+		// Map fixed-size 16-byte arrays to UUID
+		if t.Len() == 16 && t.Elem().Kind() == reflect.Uint8 {
+			return "UUID"
+		}
 	case reflect.Int8, reflect.Int16, reflect.Int32:
 		return "INTEGER"
 	case reflect.Int, reflect.Int64:
@@ -250,6 +255,11 @@ func mapGoTypeToPgType(t reflect.Type, ormTag string) string {
 	case reflect.Struct:
 		if t == reflect.TypeOf(time.Time{}) {
 			return "TIMESTAMPTZ"
+		}
+		// Heuristic: common UUID struct types from popular packages
+		// If the type is named UUID and package path contains "uuid", treat as UUID
+		if strings.EqualFold(t.Name(), "UUID") && strings.Contains(strings.ToLower(t.PkgPath()), "uuid") {
+			return "UUID"
 		}
 	}
 	return "TEXT"

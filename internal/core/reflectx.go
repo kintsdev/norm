@@ -111,6 +111,75 @@ func SetFieldByIndex(v reflect.Value, index []int, value any) {
 		fv.Set(val.Convert(fv.Type()))
 		return
 	}
+	// Special-case: convert UUID-like values to string target
+	// - Postgres/pgx may return [16]byte or []byte for UUID
+	if fv.Kind() == reflect.String {
+		// [16]byte -> uuid string
+		if val.Kind() == reflect.Array && val.Type().Elem().Kind() == reflect.Uint8 && val.Len() == 16 {
+			b := make([]byte, 16)
+			reflect.Copy(reflect.ValueOf(b), val)
+			// format as 8-4-4-4-12 hex
+			hex := func(x byte) (byte, byte) {
+				const digits = "0123456789abcdef"
+				return digits[x>>4], digits[x&0x0f]
+			}
+			out := make([]byte, 36)
+			pos := 0
+			write2 := func(x byte) {
+				a, b := hex(x)
+				out[pos] = a
+				out[pos+1] = b
+				pos += 2
+			}
+			dashes := map[int]bool{8: true, 13: true, 18: true, 23: true}
+			for i := 0; i < 16; i++ {
+				if dashes[pos] {
+					out[pos] = '-'
+					pos++
+				}
+				write2(b[i])
+				if dashes[pos] {
+					out[pos] = '-'
+					pos++
+				}
+			}
+			fv.SetString(string(out))
+			return
+		}
+		// []byte -> hex uuid attempt if length 16
+		if val.Kind() == reflect.Slice && val.Type().Elem().Kind() == reflect.Uint8 && val.Len() == 16 {
+			b := val.Bytes()
+			hex := func(x byte) (byte, byte) {
+				const digits = "0123456789abcdef"
+				return digits[x>>4], digits[x&0x0f]
+			}
+			out := make([]byte, 36)
+			pos := 0
+			dashes := map[int]bool{8: true, 13: true, 18: true, 23: true}
+			for i := 0; i < 16; i++ {
+				if dashes[pos] {
+					out[pos] = '-'
+					pos++
+				}
+				a, b2 := hex(b[i])
+				out[pos] = a
+				out[pos+1] = b2
+				pos += 2
+				if dashes[pos] {
+					out[pos] = '-'
+					pos++
+				}
+			}
+			fv.SetString(string(out))
+			return
+		}
+		// types implementing fmt.Stringer
+		type stringer interface{ String() string }
+		if s, ok := value.(stringer); ok {
+			fv.SetString(s.String())
+			return
+		}
+	}
 	// handle pointer targets
 	if fv.Kind() == reflect.Ptr && val.Type().AssignableTo(fv.Type().Elem()) {
 		p := reflect.New(fv.Type().Elem())

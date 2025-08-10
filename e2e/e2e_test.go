@@ -88,6 +88,12 @@ type CascadeChild struct {
 	ParentID int64 `db:"parent_id" norm:"not_null,fk:cascade_parents(id),on_delete:cascade,fk_name:fk_child_parent"`
 }
 
+// UUIDItem -> uuid_items (uuid primary key with default generator)
+type UUIDItem struct {
+	ID   string `db:"id" norm:"primary_key,type:uuid,default:gen_random_uuid()"`
+	Name string `db:"name"`
+}
+
 var kn *kintsnorm.KintsNorm
 
 func TestMain(m *testing.M) {
@@ -129,7 +135,7 @@ func TestHealthAndMigrate(t *testing.T) {
 
 	// Plan and log statements for debugging then migrate
 	mg := migration.NewMigrator(kn.Pool())
-	plan, perr := mg.Plan(ctx, &User{}, &Profile{}, &MoneyTest{}, &Account{}, &PartialIdx{}, &IgnoreField{}, &CascadeParent{}, &CascadeChild{})
+	plan, perr := mg.Plan(ctx, &User{}, &Profile{}, &MoneyTest{}, &Account{}, &PartialIdx{}, &IgnoreField{}, &CascadeParent{}, &CascadeChild{}, &UUIDItem{})
 	if perr != nil {
 		t.Fatalf("plan failed: %v", perr)
 	}
@@ -143,7 +149,7 @@ func TestHealthAndMigrate(t *testing.T) {
 		}
 	}
 	// Run automigrate to record schema_migrations entry
-	if err := kn.AutoMigrate(&User{}, &Profile{}, &MoneyTest{}, &Account{}, &PartialIdx{}, &IgnoreField{}, &CascadeParent{}, &CascadeChild{}); err != nil {
+	if err := kn.AutoMigrate(&User{}, &Profile{}, &MoneyTest{}, &Account{}, &PartialIdx{}, &IgnoreField{}, &CascadeParent{}, &CascadeChild{}, &UUIDItem{}); err != nil {
 		t.Fatalf("automigrate failed: %v", err)
 	}
 
@@ -606,6 +612,65 @@ func TestQueryBuilderJoinsPaginationRawAndTimeout(t *testing.T) {
 	var sleeper []map[string]any
 	if err := kn.Query().Raw("select pg_sleep(0.2)").Find(tctx, &sleeper); err == nil {
 		t.Fatalf("expected context timeout on pg_sleep")
+	}
+}
+
+func TestUUIDTypeMigrationInsertAndScan(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	// migrate uuid_items
+	if err := kn.AutoMigrate(&UUIDItem{}); err != nil {
+		t.Fatalf("migrate uuid_items: %v", err)
+	}
+	// ensure clean (table name derived from acronym split)
+	_, _ = kn.Pool().Exec(ctx, "TRUNCATE u_u_i_d_items")
+
+	// verify column type is uuid in information_schema
+	var dt string
+	if err := kn.Pool().QueryRow(ctx, `SELECT data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='u_u_i_d_items' AND column_name='id'`).Scan(&dt); err != nil {
+		t.Fatalf("inspect uuid column: %v", err)
+	}
+	// PostgreSQL reports uuid type as 'uuid'
+	if strings.ToLower(dt) != "uuid" {
+		t.Fatalf("expected uuid data_type, got %s", dt)
+	}
+
+	// insert via builder using default gen_random_uuid()
+	var ret []map[string]any
+	aff, err := kn.Model(UUIDItem{}).Insert("name").Values("item-1").Returning("id", "name").ExecInsert(ctx, &ret)
+	if err != nil || aff != 1 {
+		t.Fatalf("insert uuid item: aff=%d err=%v", aff, err)
+	}
+	if len(ret) != 1 || fmt.Sprint(ret[0]["name"]) != "item-1" {
+		t.Fatalf("unexpected returning row: %+v", ret)
+	}
+	// returned value from pgx for uuid may be [16]byte or []byte; accept both, or a canonical string
+	switch v := ret[0]["id"].(type) {
+	case [16]byte:
+		// ok
+	case []byte:
+		if len(v) != 16 {
+			t.Fatalf("expected 16-byte UUID, got len=%d", len(v))
+		}
+	case string:
+		if len(v) != 36 || v[8] != '-' || v[13] != '-' || v[18] != '-' || v[23] != '-' {
+			t.Fatalf("expected canonical uuid string, got %q", v)
+		}
+	default:
+		t.Fatalf("unexpected uuid return type: %T", ret[0]["id"])
+	}
+
+	// read back into struct with string ID using Query builder -> scan path
+	var rows []UUIDItem
+	if err := kn.Model(&UUIDItem{}).Find(ctx, &rows); err != nil {
+		t.Fatalf("find uuid items: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Name != "item-1" {
+		t.Fatalf("unexpected rows: %+v", rows)
+	}
+	// scanned string should be canonical format
+	if len(rows[0].ID) != 36 || rows[0].ID[8] != '-' || rows[0].ID[13] != '-' || rows[0].ID[18] != '-' || rows[0].ID[23] != '-' {
+		t.Fatalf("expected scanned ID in canonical format, got %q", rows[0].ID)
 	}
 }
 
