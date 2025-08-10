@@ -1,4 +1,4 @@
-## Kints-Norm Roadmap
+## Norm Roadmap
 
 This document tracks planned work. Items are grouped by area. Checked items are implemented and covered by e2e tests.
 
