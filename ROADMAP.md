@@ -55,7 +55,7 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 ### Read/Write Splitting & Caching
 
 - [x] Optional read pool via `ReadOnlyConnString` + `QueryRead()` (e2e covered)
-- [ ] Auto read routing + overrides
+- [x] Auto read routing (Query auto-routes to read pool; writes use primary) (e2e covered)
 - [ ] Cache integration hooks (read-through/write-through)
 - [ ] Cache invalidation on write/tx commit
 

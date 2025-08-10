@@ -43,6 +43,11 @@ type QueryBuilder struct {
 
 // Query creates a new query builder
 func (kn *KintsNorm) Query() *QueryBuilder {
+	// If read pool is configured, route reads automatically using routingExecuter
+	if kn.readPool != nil {
+		exec := dbExecuter(routingExecuter{kn: kn})
+		return &QueryBuilder{kn: kn, exec: exec}
+	}
 	exec := dbExecuter(kn.pool)
 	if kn.breaker != nil {
 		exec = breakerExecuter{kn: kn, exec: exec}

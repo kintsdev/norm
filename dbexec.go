@@ -74,3 +74,44 @@ func (r rowWithAfter) Scan(dest ...any) error {
 	}
 	return err
 }
+
+// routingExecuter routes read operations (Query/QueryRow) to readPool when available, writes (Exec) to primary pool
+type routingExecuter struct{ kn *KintsNorm }
+
+func (r routingExecuter) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+	exec := dbExecuter(r.kn.pool)
+	if br := r.kn.breaker; br != nil {
+		if err := br.before(); err != nil {
+			return pgconn.CommandTag{}, err
+		}
+		tag, err := exec.Exec(ctx, sql, arguments...)
+		br.after(err)
+		return tag, err
+	}
+	return exec.Exec(ctx, sql, arguments...)
+}
+
+func (r routingExecuter) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	exec := dbExecuter(r.kn.ReadPool())
+	if br := r.kn.breaker; br != nil {
+		if err := br.before(); err != nil {
+			return nil, err
+		}
+		rows, err := exec.Query(ctx, sql, args...)
+		br.after(err)
+		return rows, err
+	}
+	return exec.Query(ctx, sql, args...)
+}
+
+func (r routingExecuter) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	exec := dbExecuter(r.kn.ReadPool())
+	if br := r.kn.breaker; br != nil {
+		if err := br.before(); err != nil {
+			return errorRow{err: err}
+		}
+		row := exec.QueryRow(ctx, sql, args...)
+		return rowWithAfter{Row: row, after: func(err error) { br.after(err) }}
+	}
+	return exec.QueryRow(ctx, sql, args...)
+}

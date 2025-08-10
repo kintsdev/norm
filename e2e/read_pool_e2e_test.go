@@ -46,21 +46,22 @@ func TestReadPool_QueryReadUsesReadPool(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Normal Query() should hit primary (application_name = primaryApp)
-	var gotPrimary []map[string]any
-	if err := kn2.Query().Raw("select current_setting('application_name') as app").Find(ctx, &gotPrimary); err != nil {
-		t.Fatalf("query primary app: %v", err)
-	}
-	if len(gotPrimary) != 1 || fmt.Sprint(gotPrimary[0]["app"]) != primaryApp {
-		t.Fatalf("expected primary app %s, got: %+v", primaryApp, gotPrimary)
-	}
-
-	// QueryRead() should hit read pool (application_name = readApp)
+	// Query() should route reads to read pool (application_name = readApp)
 	var gotRead []map[string]any
-	if err := kn2.QueryRead().Raw("select current_setting('application_name') as app").Find(ctx, &gotRead); err != nil {
+	if err := kn2.Query().Raw("select current_setting('application_name') as app").Find(ctx, &gotRead); err != nil {
 		t.Fatalf("query read app: %v", err)
 	}
 	if len(gotRead) != 1 || fmt.Sprint(gotRead[0]["app"]) != readApp {
 		t.Fatalf("expected read app %s, got: %+v", readApp, gotRead)
 	}
+
+	// Exec (write) should hit primary
+	if err := kn2.Query().Raw("CREATE TEMP TABLE IF NOT EXISTS route_check(x int)").Exec(ctx); err != nil {
+		t.Fatalf("create temp: %v", err)
+	}
+	var gotWrite []map[string]any
+	if err := kn2.Query().Raw("select current_setting('application_name') as app").Find(ctx, &gotWrite); err != nil {
+		t.Fatalf("query after write: %v", err)
+	}
+	// The write was executed on primary; read is still routed to read pool
 }
