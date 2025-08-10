@@ -63,9 +63,9 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 
 - [x] Metrics/Logger interfaces
 - [x] Basic query duration metric calls in builder
-- [ ] Structured logging with context fields, correlation IDs
-- [ ] Slow query logging with threshold and parameter masking
-- [ ] Built-in metrics adapter examples
+- [x] Structured logging with context fields, correlation IDs
+- [x] Slow query logging with threshold and parameter masking
+- [x] Built-in metrics adapter examples (expvar)
 
 ### Security & Production
 

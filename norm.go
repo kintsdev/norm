@@ -21,6 +21,10 @@ type KintsNorm struct {
 	cache    Cache
 	migrator *migration.Migrator
 	breaker  *circuitBreaker
+	// logging enhancements
+	logContextFields   func(ctx context.Context) []Field
+	slowQueryThreshold time.Duration
+	maskParams         bool
 }
 
 // New creates a new KintsNorm instance, initializing the pgx pool
@@ -39,7 +43,17 @@ func New(config *Config, opts ...Option) (*KintsNorm, error) {
 		return nil, err
 	}
 
-	kn := &KintsNorm{pool: pool, config: config, logger: options.logger, logMode: options.logMode, metrics: options.metrics, cache: options.cache}
+	kn := &KintsNorm{
+		pool:               pool,
+		config:             config,
+		logger:             options.logger,
+		logMode:            options.logMode,
+		metrics:            options.metrics,
+		cache:              options.cache,
+		logContextFields:   options.logContextFields,
+		slowQueryThreshold: options.slowQueryThreshold,
+		maskParams:         options.maskParams,
+	}
 	// optional read-only pool
 	if config.ReadOnlyConnString != "" {
 		rp, rerr := newPoolFromConnString(context.Background(), config.ReadOnlyConnString)
@@ -76,15 +90,36 @@ func NewWithConnString(connString string, opts ...Option) (*KintsNorm, error) {
 		return nil, err
 	}
 	kn := &KintsNorm{
-		pool:    pool,
-		config:  nil,
-		logger:  options.logger,
-		logMode: options.logMode,
-		metrics: options.metrics,
-		cache:   options.cache,
+		pool:               pool,
+		config:             nil,
+		logger:             options.logger,
+		logMode:            options.logMode,
+		metrics:            options.metrics,
+		cache:              options.cache,
+		logContextFields:   options.logContextFields,
+		slowQueryThreshold: options.slowQueryThreshold,
+		maskParams:         options.maskParams,
 	}
 	kn.migrator = migration.NewMigrator(kn.pool)
 	return kn, nil
+}
+
+// makeLogFields constructs structured logging fields honoring context extractors and masking options
+func (kn *KintsNorm) makeLogFields(ctx context.Context, query string, args []any) []Field {
+	fields := make([]Field, 0, 8)
+	if kn != nil && kn.logContextFields != nil {
+		if ctxFields := kn.logContextFields(ctx); len(ctxFields) > 0 {
+			fields = append(fields, ctxFields...)
+		}
+	}
+	fields = append(fields, Field{Key: "sql", Value: query})
+	if kn != nil && kn.maskParams {
+		fields = append(fields, Field{Key: "args", Value: "[masked]"})
+	} else {
+		fields = append(fields, Field{Key: "args", Value: args})
+		fields = append(fields, Field{Key: "stmt", Value: inlineSQL(query, args)})
+	}
+	return fields
 }
 
 // default helpers (kept here to avoid extra utils file)

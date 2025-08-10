@@ -386,22 +386,31 @@ func (qb *QueryBuilder) Find(ctx context.Context, dest any) error {
 	if qb.kn != nil && qb.kn.logger != nil {
 		switch qb.kn.logMode {
 		case LogDebug, LogInfo:
-			qb.kn.logger.Debug("query", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+			qb.kn.logger.Debug("query", qb.kn.makeLogFields(ctx, query, args)...)
 		case LogWarn, LogError:
 			// no query-level log; errors will be logged when they occur
 		case LogSilent:
 			if qb.forceDebug {
-				qb.kn.logger.Debug("query", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+				qb.kn.logger.Debug("query", qb.kn.makeLogFields(ctx, query, args)...)
 			}
 		}
 	}
 	if qb.kn.metrics != nil {
 		qb.kn.metrics.QueryDuration(time.Since(started), query)
 	}
+	if qb.kn != nil && qb.kn.logger != nil && qb.kn.slowQueryThreshold > 0 {
+		if dur := time.Since(started); dur > qb.kn.slowQueryThreshold {
+			fields := qb.kn.makeLogFields(ctx, query, args)
+			fields = append(fields, Field{Key: "duration_ms", Value: dur.Milliseconds()})
+			qb.kn.logger.Warn("slow_query", fields...)
+		}
+	}
 	if err != nil {
 		if qb.kn != nil && qb.kn.logger != nil {
 			if qb.kn.logMode != LogSilent || qb.forceDebug {
-				qb.kn.logger.Error("query_error", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "error", Value: err})
+				fields := qb.kn.makeLogFields(ctx, query, args)
+				fields = append(fields, Field{Key: "error", Value: err})
+				qb.kn.logger.Error("query_error", fields...)
 			}
 		}
 		return wrapPgError(err, query, args)
@@ -562,21 +571,30 @@ func (qb *QueryBuilder) Delete(ctx context.Context) (int64, error) {
 	if qb.kn != nil && qb.kn.logger != nil {
 		switch qb.kn.logMode {
 		case LogDebug, LogInfo:
-			qb.kn.logger.Debug("exec", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+			qb.kn.logger.Debug("exec", qb.kn.makeLogFields(ctx, query, args)...)
 		case LogWarn, LogError:
 		case LogSilent:
 			if qb.forceDebug {
-				qb.kn.logger.Debug("exec", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+				qb.kn.logger.Debug("exec", qb.kn.makeLogFields(ctx, query, args)...)
 			}
 		}
 	}
 	if qb.kn.metrics != nil {
 		qb.kn.metrics.QueryDuration(time.Since(started), query)
 	}
+	if qb.kn != nil && qb.kn.logger != nil && qb.kn.slowQueryThreshold > 0 {
+		if dur := time.Since(started); dur > qb.kn.slowQueryThreshold {
+			fields := qb.kn.makeLogFields(ctx, query, args)
+			fields = append(fields, Field{Key: "duration_ms", Value: dur.Milliseconds()})
+			qb.kn.logger.Warn("slow_exec", fields...)
+		}
+	}
 	if err != nil {
 		if qb.kn != nil && qb.kn.logger != nil {
 			if qb.kn.logMode != LogSilent || qb.forceDebug {
-				qb.kn.logger.Error("exec_error", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "error", Value: err})
+				fields := qb.kn.makeLogFields(ctx, query, args)
+				fields = append(fields, Field{Key: "error", Value: err})
+				qb.kn.logger.Error("exec_error", fields...)
 			}
 		}
 		return 0, err
@@ -606,21 +624,30 @@ func (qb *QueryBuilder) Exec(ctx context.Context) error {
 	if qb.kn != nil && qb.kn.logger != nil {
 		switch qb.kn.logMode {
 		case LogDebug, LogInfo:
-			qb.kn.logger.Debug("exec", Field{Key: "sql", Value: qb.raw}, Field{Key: "args", Value: qb.args}, Field{Key: "stmt", Value: inlineSQL(qb.raw, qb.args)})
+			qb.kn.logger.Debug("exec", qb.kn.makeLogFields(ctx, qb.raw, qb.args)...)
 		case LogWarn, LogError:
 		case LogSilent:
 			if qb.forceDebug {
-				qb.kn.logger.Debug("exec", Field{Key: "sql", Value: qb.raw}, Field{Key: "args", Value: qb.args}, Field{Key: "stmt", Value: inlineSQL(qb.raw, qb.args)})
+				qb.kn.logger.Debug("exec", qb.kn.makeLogFields(ctx, qb.raw, qb.args)...)
 			}
 		}
 	}
 	if qb.kn.metrics != nil {
 		qb.kn.metrics.QueryDuration(time.Since(started), qb.raw)
 	}
+	if qb.kn != nil && qb.kn.logger != nil && qb.kn.slowQueryThreshold > 0 {
+		if dur := time.Since(started); dur > qb.kn.slowQueryThreshold {
+			fields := qb.kn.makeLogFields(ctx, qb.raw, qb.args)
+			fields = append(fields, Field{Key: "duration_ms", Value: dur.Milliseconds()})
+			qb.kn.logger.Warn("slow_exec", fields...)
+		}
+	}
 	if err != nil {
 		if qb.kn != nil && qb.kn.logger != nil {
 			if qb.kn.logMode != LogSilent || qb.forceDebug {
-				qb.kn.logger.Error("exec_error", Field{Key: "sql", Value: qb.raw}, Field{Key: "args", Value: qb.args}, Field{Key: "error", Value: err})
+				fields := qb.kn.makeLogFields(ctx, qb.raw, qb.args)
+				fields = append(fields, Field{Key: "error", Value: err})
+				qb.kn.logger.Error("exec_error", fields...)
 			}
 		}
 		return wrapPgError(err, qb.raw, qb.args)
@@ -753,11 +780,11 @@ func (qb *QueryBuilder) ExecInsert(ctx context.Context, dest any) (int64, error)
 	if qb.kn != nil && qb.kn.logger != nil {
 		switch qb.kn.logMode {
 		case LogDebug, LogInfo:
-			qb.kn.logger.Debug("query", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+			qb.kn.logger.Debug("query", qb.kn.makeLogFields(ctx, query, args)...)
 		case LogWarn, LogError:
 		case LogSilent:
 			if qb.forceDebug {
-				qb.kn.logger.Debug("query", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+				qb.kn.logger.Debug("query", qb.kn.makeLogFields(ctx, query, args)...)
 			}
 		}
 	}
@@ -767,7 +794,9 @@ func (qb *QueryBuilder) ExecInsert(ctx context.Context, dest any) (int64, error)
 	if err != nil {
 		if qb.kn != nil && qb.kn.logger != nil {
 			if qb.kn.logMode != LogSilent || qb.forceDebug {
-				qb.kn.logger.Error("query_error", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "error", Value: err})
+				fields := qb.kn.makeLogFields(ctx, query, args)
+				fields = append(fields, Field{Key: "error", Value: err})
+				qb.kn.logger.Error("query_error", fields...)
 			}
 		}
 		return 0, wrapPgError(err, query, args)
@@ -872,11 +901,11 @@ func (qb *QueryBuilder) ExecUpdate(ctx context.Context, dest any) (int64, error)
 	if qb.kn != nil && qb.kn.logger != nil {
 		switch qb.kn.logMode {
 		case LogDebug, LogInfo:
-			qb.kn.logger.Debug("query", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+			qb.kn.logger.Debug("query", qb.kn.makeLogFields(ctx, query, args)...)
 		case LogWarn, LogError:
 		case LogSilent:
 			if qb.forceDebug {
-				qb.kn.logger.Debug("query", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "stmt", Value: inlineSQL(query, args)})
+				qb.kn.logger.Debug("query", qb.kn.makeLogFields(ctx, query, args)...)
 			}
 		}
 	}
@@ -886,7 +915,9 @@ func (qb *QueryBuilder) ExecUpdate(ctx context.Context, dest any) (int64, error)
 	if err != nil {
 		if qb.kn != nil && qb.kn.logger != nil {
 			if qb.kn.logMode != LogSilent || qb.forceDebug {
-				qb.kn.logger.Error("query_error", Field{Key: "sql", Value: query}, Field{Key: "args", Value: args}, Field{Key: "error", Value: err})
+				fields := qb.kn.makeLogFields(ctx, query, args)
+				fields = append(fields, Field{Key: "error", Value: err})
+				qb.kn.logger.Error("query_error", fields...)
 			}
 		}
 		return 0, wrapPgError(err, query, args)

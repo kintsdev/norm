@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"errors"
+	"expvar"
 	"fmt"
 	"net"
 	"os"
@@ -1499,6 +1500,147 @@ func TestNamedParametersInBuilderAndRaw(t *testing.T) {
 	}
 	if fmt.Sprint(rows[0]["s"]) != "5" || fmt.Sprint(rows[0]["l"]) != ":literal" {
 		t.Fatalf("unexpected raw named result: %+v", rows)
+	}
+}
+
+// --- Observability & Logging e2e tests ---
+
+type logEntry struct {
+	level  string
+	msg    string
+	fields []kintsnorm.Field
+}
+
+type captureLogger struct{ entries []logEntry }
+
+func (l *captureLogger) Debug(msg string, fields ...kintsnorm.Field) {
+	l.entries = append(l.entries, logEntry{level: "debug", msg: msg, fields: fields})
+}
+func (l *captureLogger) Info(msg string, fields ...kintsnorm.Field) {
+	l.entries = append(l.entries, logEntry{level: "info", msg: msg, fields: fields})
+}
+func (l *captureLogger) Warn(msg string, fields ...kintsnorm.Field) {
+	l.entries = append(l.entries, logEntry{level: "warn", msg: msg, fields: fields})
+}
+func (l *captureLogger) Error(msg string, fields ...kintsnorm.Field) {
+	l.entries = append(l.entries, logEntry{level: "error", msg: msg, fields: fields})
+}
+
+func TestStructuredLogging_ContextFields_SlowQuery_And_ParamMasking(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	host := getenvDefault("PGHOST", "127.0.0.1")
+	port := getenvDefault("PGPORT", "5432")
+	user := getenvDefault("PGUSER", "postgres")
+	pass := getenvDefault("PGPASSWORD", "postgres")
+	db := getenvDefault("PGDATABASE", "postgres")
+	dsn := fmt.Sprintf("host=%s port=%s dbname=%s user=%s password=%s sslmode=disable", host, port, db, user, pass)
+
+	lg := &captureLogger{}
+	kn2, err := kintsnorm.NewWithConnString(
+		dsn,
+		kintsnorm.WithLogger(lg),
+		kintsnorm.WithLogMode(kintsnorm.LogInfo),
+		kintsnorm.WithLogContextFields(func(ctx context.Context) []kintsnorm.Field {
+			if v := ctx.Value("corr_id"); v != nil {
+				return []kintsnorm.Field{{Key: "corr_id", Value: v}}
+			}
+			return nil
+		}),
+		kintsnorm.WithSlowQueryThreshold(20*time.Millisecond),
+		kintsnorm.WithLogParameterMasking(true),
+	)
+	if err != nil {
+		t.Fatalf("new kn2: %v", err)
+	}
+	defer func() { _ = kn2.Close() }()
+
+	ctx = context.WithValue(ctx, "corr_id", "e2e-123")
+
+	// fast query -> should log query with masked args and include corr_id
+	var rows []map[string]any
+	if err := kn2.Query().Raw("SELECT 1 AS a WHERE $1=$2", 1, 1).Find(ctx, &rows); err != nil {
+		t.Fatalf("fast query: %v", err)
+	}
+	foundQuery := false
+	for _, e := range lg.entries {
+		if e.msg == "query" {
+			hasCorr := false
+			hasMasked := false
+			hasStmt := false
+			for _, f := range e.fields {
+				if f.Key == "corr_id" && fmt.Sprint(f.Value) == "e2e-123" {
+					hasCorr = true
+				}
+				if f.Key == "args" && fmt.Sprint(f.Value) == "[masked]" {
+					hasMasked = true
+				}
+				if f.Key == "stmt" {
+					hasStmt = true
+				}
+			}
+			if hasCorr && hasMasked && !hasStmt {
+				foundQuery = true
+				break
+			}
+		}
+	}
+	if !foundQuery {
+		t.Fatalf("expected masked query log with corr_id and without stmt")
+	}
+
+	// slow query via pg_sleep -> should emit slow_query warn
+	_ = kn2.Query().Raw("select pg_sleep(0.05)").Find(ctx, &rows)
+	foundSlow := false
+	for _, e := range lg.entries {
+		if e.msg == "slow_query" && e.level == "warn" {
+			foundSlow = true
+			break
+		}
+	}
+	if !foundSlow {
+		t.Fatalf("expected slow_query warn entry")
+	}
+}
+
+func TestMetrics_ExpvarAdapter_UpdatesCounters(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	host := getenvDefault("PGHOST", "127.0.0.1")
+	port := getenvDefault("PGPORT", "5432")
+	user := getenvDefault("PGUSER", "postgres")
+	pass := getenvDefault("PGPASSWORD", "postgres")
+	db := getenvDefault("PGDATABASE", "postgres")
+	dsn := fmt.Sprintf("host=%s port=%s dbname=%s user=%s password=%s sslmode=disable", host, port, db, user, pass)
+
+	knm, err := kintsnorm.NewWithConnString(dsn, kintsnorm.WithMetrics(kintsnorm.ExpvarMetrics{}))
+	if err != nil {
+		t.Fatalf("new with expvar metrics: %v", err)
+	}
+	defer func() { _ = knm.Close() }()
+
+	// run a query to bump counters
+	var out []map[string]any
+	if err := knm.Query().Raw("SELECT 1").Find(ctx, &out); err != nil {
+		t.Fatalf("metrics query: %v", err)
+	}
+
+	// read expvar values
+	if v := expvar.Get("norm_query_count"); v == nil {
+		t.Fatalf("norm_query_count not published")
+	} else {
+		if iv, ok := v.(*expvar.Int); ok {
+			if iv.Value() < 1 {
+				t.Fatalf("expected norm_query_count >= 1, got %d", iv.Value())
+			}
+		} else {
+			t.Fatalf("norm_query_count not an expvar.Int: %T", v)
+		}
+	}
+	if v := expvar.Get("norm_last_query_ms"); v == nil {
+		t.Fatalf("norm_last_query_ms not published")
 	}
 }
 
