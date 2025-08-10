@@ -85,8 +85,8 @@ func main() {
 Yakında: manuel (dosya tabanlı) Up/Down migrasyonları, rollback desteği, drop/rename table için guard’lar.
 
 ### Read/Write Splitting ve Retry
-- `Config.ReadOnlyConnString` verilirse read pool açılır; `QueryRead()` ile kullanılır
-- İleride: read operasyonlarını otomatik olarak read pool’a yönlendirme
+- `Config.ReadOnlyConnString` verilirse read pool açılır; `Query()` otomatik olarak read sorgularını read pool’a yönlendirir, yazmalar primary’de çalışır
+- Override: `UsePrimary()` ile okuma sorgusunu primary’e yönlendirebilirsiniz; `UseReadPool()` manuel read pool kullanımı sağlar
 - Retry: `RetryAttempts` ve `RetryBackoff` (exponential + jitter)
 - Circuit Breaker: `CircuitBreakerEnabled`, `CircuitFailureThreshold`, `CircuitOpenTimeout`, `CircuitHalfOpenMaxCalls`
 

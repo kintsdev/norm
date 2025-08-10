@@ -97,6 +97,27 @@ func (qb *QueryBuilder) SelectQI(columns ...string) *QueryBuilder {
 	return qb
 }
 
+// UsePrimary routes subsequent calls (Query/Find/First/Last) through the primary pool (overrides auto read routing)
+func (qb *QueryBuilder) UsePrimary() *QueryBuilder {
+	exec := dbExecuter(qb.kn.pool)
+	if qb.kn.breaker != nil {
+		exec = breakerExecuter{kn: qb.kn, exec: exec}
+	}
+	qb.exec = exec
+	return qb
+}
+
+// UseReadPool forces using the read pool for reads even if no auto routing is enabled
+// Note: Do not use this for writes; Exec/insert/update/delete should go to primary
+func (qb *QueryBuilder) UseReadPool() *QueryBuilder {
+	exec := dbExecuter(qb.kn.ReadPool())
+	if qb.kn.breaker != nil {
+		exec = breakerExecuter{kn: qb.kn, exec: exec}
+	}
+	qb.exec = exec
+	return qb
+}
+
 func (qb *QueryBuilder) Table(name string) *QueryBuilder {
 	qb.table = name
 	return qb

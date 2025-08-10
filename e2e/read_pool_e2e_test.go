@@ -60,8 +60,10 @@ func TestReadPool_QueryReadUsesReadPool(t *testing.T) {
 		t.Fatalf("create temp: %v", err)
 	}
 	var gotWrite []map[string]any
-	if err := kn2.Query().Raw("select current_setting('application_name') as app").Find(ctx, &gotWrite); err != nil {
+	if err := kn2.Query().UsePrimary().Raw("select current_setting('application_name') as app").Find(ctx, &gotWrite); err != nil {
 		t.Fatalf("query after write: %v", err)
 	}
-	// The write was executed on primary; read is still routed to read pool
+	if len(gotWrite) != 1 || fmt.Sprint(gotWrite[0]["app"]) != primaryApp {
+		t.Fatalf("expected primary app %s when UsePrimary override, got: %+v", primaryApp, gotWrite)
+	}
 }
