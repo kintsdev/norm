@@ -537,6 +537,31 @@ func TestInsertReturningUpsertAndUpdateReturning(t *testing.T) {
 	}
 }
 
+func TestRepositoryUpsert(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, _ = kn.Pool().Exec(ctx, "TRUNCATE users RESTART IDENTITY CASCADE")
+
+	repo := kintsnorm.NewRepository[User](kn)
+	u := &User{Email: "rup@example.com", Username: "rup1", Password: "x"}
+	if err := repo.Upsert(ctx, u, []string{"email"}, []string{"username", "password"}); err != nil {
+		t.Fatalf("upsert insert: %v", err)
+	}
+	got, err := repo.FindOne(ctx, kintsnorm.Condition{Expr: "email = ?", Args: []any{"rup@example.com"}})
+	if err != nil || got.Username != "rup1" {
+		t.Fatalf("after first upsert unexpected: %+v err=%v", got, err)
+	}
+	// change username and run upsert again -> should update existing row
+	u.Username = "rup2"
+	if err := repo.Upsert(ctx, u, []string{"email"}, []string{"username"}); err != nil {
+		t.Fatalf("upsert update: %v", err)
+	}
+	got2, err := repo.FindOne(ctx, kintsnorm.Condition{Expr: "email = ?", Args: []any{"rup@example.com"}})
+	if err != nil || got2.Username != "rup2" {
+		t.Fatalf("after second upsert unexpected: %+v err=%v", got2, err)
+	}
+}
+
 func TestTxQueryBuilderAndReadPoolFallback(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

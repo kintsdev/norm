@@ -49,7 +49,7 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [x] Optimistic locking (`orm:"version"`)
 - [x] Transactions (`TxManager`, transaction-bound QueryBuilder)
 - [ ] Auto route read operations to read-replica pool; writes to primary
-- [ ] Upsert helpers in repository
+- [x] Upsert helpers in repository (e2e covered)
 - [ ] Eager/lazy loading helpers
 
 ### Read/Write Splitting & Caching
