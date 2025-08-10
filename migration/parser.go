@@ -21,6 +21,7 @@ type fieldTag struct {
 	IsPointer  bool
 	FKTable    string
 	FKColumn   string
+	RenameFrom string
 }
 
 type modelInfo struct {
@@ -94,6 +95,8 @@ func parseModel(model any) modelInfo {
 						ft.FKTable = ref[:i]
 						ft.FKColumn = strings.TrimSuffix(ref[i+1:], ")")
 					}
+				case strings.HasPrefix(strings.ToLower(p), "rename:"):
+					ft.RenameFrom = strings.TrimPrefix(p, "rename:")
 				default:
 					// If token looks like a type override e.g. varchar(50)
 					if strings.Contains(p, "(") || strings.EqualFold(p, "text") || strings.HasPrefix(strings.ToLower(p), "varchar") {
