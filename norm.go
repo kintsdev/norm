@@ -70,7 +70,7 @@ func NewWithConnString(connString string, opts ...Option) (*KintsNorm, error) {
 }
 
 // AutoMigrate runs schema migrations for given models
-func (kn *KintsNorm) AutoMigrate(models ...interface{}) error {
+func (kn *KintsNorm) AutoMigrate(models ...any) error {
 	return kn.migrator.AutoMigrate(context.Background(), models...)
 }
 

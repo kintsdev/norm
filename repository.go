@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	pgxv5 "github.com/jackc/pgx/v5"
+	core "github.com/kintsdev/norm/internal/core"
 )
 
 // Condition is a placeholder for typed conditions
@@ -67,7 +68,7 @@ func (r *repo[T]) tableName() string {
 	for typ.Kind() == reflect.Ptr {
 		typ = typ.Elem()
 	}
-	return toSnakeCase(typ.Name()) + "s"
+	return core.ToSnakeCase(typ.Name()) + "s"
 }
 
 func (r *repo[T]) Create(ctx context.Context, entity *T) error {
@@ -77,7 +78,7 @@ func (r *repo[T]) Create(ctx context.Context, entity *T) error {
 	execFn := func() error {
 		val := reflect.Indirect(reflect.ValueOf(entity))
 		typ := val.Type()
-		mapper := structMapper(typ)
+		mapper := core.StructMapper(typ)
 		cols := make([]string, 0, typ.NumField())
 		placeholders := make([]string, 0, typ.NumField())
 		args := make([]any, 0, typ.NumField())
@@ -89,9 +90,9 @@ func (r *repo[T]) Create(ctx context.Context, entity *T) error {
 			}
 			col := f.Tag.Get("db")
 			if col == "" {
-				col = toSnakeCase(f.Name)
+				col = core.ToSnakeCase(f.Name)
 			}
-			if mapper.autoIncrement && strings.EqualFold(col, mapper.primaryColumn) {
+			if mapper.AutoIncrement && strings.EqualFold(col, mapper.PrimaryColumn) {
 				continue
 			}
 			orm := f.Tag.Get("orm")
@@ -128,7 +129,7 @@ func (r *repo[T]) GetByID(ctx context.Context, id any) (*T, error) {
 	qb := r.kn.Query().Table(r.tableName()).Where("id = ?", id).Limit(1)
 	// Apply soft-delete default filter if model has deleted_at
 	var t T
-	if modelHasSoftDelete(reflect.TypeOf(t)) {
+	if core.ModelHasSoftDelete(reflect.TypeOf(t)) {
 		switch r.mode {
 		case softModeOnlyTrashed:
 			qb = qb.Where("deleted_at IS NOT NULL")
@@ -150,8 +151,8 @@ func (r *repo[T]) GetByID(ctx context.Context, id any) (*T, error) {
 func (r *repo[T]) Update(ctx context.Context, entity *T) error {
 	val := reflect.Indirect(reflect.ValueOf(entity))
 	typ := val.Type()
-	mapper := structMapper(typ)
-	if mapper.primaryColumn == "" {
+	mapper := core.StructMapper(typ)
+	if mapper.PrimaryColumn == "" {
 		return &ORMError{Code: ErrCodeValidation, Message: "no primary key"}
 	}
 
@@ -168,15 +169,15 @@ func (r *repo[T]) Update(ctx context.Context, entity *T) error {
 		}
 		col := f.Tag.Get("db")
 		if col == "" {
-			col = toSnakeCase(f.Name)
+			col = core.ToSnakeCase(f.Name)
 		}
 		v := val.Field(i).Interface()
-		if strings.EqualFold(col, mapper.primaryColumn) {
+		if strings.EqualFold(col, mapper.PrimaryColumn) {
 			id = v
 			continue
 		}
 		// optimistic locking: version column gets incremented
-		if strings.EqualFold(col, mapper.versionColumn) && mapper.versionColumn != "" {
+		if strings.EqualFold(col, mapper.VersionColumn) && mapper.VersionColumn != "" {
 			sets = append(sets, fmt.Sprintf("%s = %s + 1", col, col))
 			continue
 		}
@@ -192,11 +193,11 @@ func (r *repo[T]) Update(ctx context.Context, entity *T) error {
 		return &ORMError{Code: ErrCodeValidation, Message: "missing primary key value"}
 	}
 	// add conditions for optimistic locking if versionColumn present
-	if mapper.versionColumn != "" {
+	if mapper.VersionColumn != "" {
 		// read current version value from entity
-		curVersion := reflect.Indirect(reflect.ValueOf(entity)).FieldByNameFunc(func(n string) bool { return strings.EqualFold(toSnakeCase(n), mapper.versionColumn) }).Interface()
+		curVersion := reflect.Indirect(reflect.ValueOf(entity)).FieldByNameFunc(func(n string) bool { return strings.EqualFold(core.ToSnakeCase(n), mapper.VersionColumn) }).Interface()
 		args = append(args, id, curVersion)
-		query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = $%d AND %s = $%d", r.tableName(), strings.Join(sets, ", "), mapper.primaryColumn, idx, mapper.versionColumn, idx+1)
+		query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = $%d AND %s = $%d", r.tableName(), strings.Join(sets, ", "), mapper.PrimaryColumn, idx, mapper.VersionColumn, idx+1)
 		tag, err := r.exec.Exec(ctx, query, args...)
 		if err != nil {
 			return err
@@ -207,7 +208,7 @@ func (r *repo[T]) Update(ctx context.Context, entity *T) error {
 		return nil
 	}
 	args = append(args, id)
-	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = $%d", r.tableName(), strings.Join(sets, ", "), mapper.primaryColumn, idx)
+	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = $%d", r.tableName(), strings.Join(sets, ", "), mapper.PrimaryColumn, idx)
 	_, err := r.exec.Exec(ctx, query, args...)
 	return err
 }
@@ -263,7 +264,7 @@ func (r *repo[T]) Delete(ctx context.Context, id any) error {
 func (r *repo[T]) SoftDelete(ctx context.Context, id any) error {
 	// ensure model supports soft delete
 	var t T
-	if !modelHasSoftDelete(reflect.TypeOf(t)) {
+	if !core.ModelHasSoftDelete(reflect.TypeOf(t)) {
 		return &ORMError{Code: ErrCodeValidation, Message: "soft delete not supported: missing deleted_at column"}
 	}
 	// expects a deleted_at column
@@ -274,7 +275,7 @@ func (r *repo[T]) SoftDelete(ctx context.Context, id any) error {
 
 func (r *repo[T]) SoftDeleteAll(ctx context.Context) (int64, error) {
 	var t T
-	if !modelHasSoftDelete(reflect.TypeOf(t)) {
+	if !core.ModelHasSoftDelete(reflect.TypeOf(t)) {
 		return 0, &ORMError{Code: ErrCodeValidation, Message: "soft delete not supported: missing deleted_at column"}
 	}
 	query := fmt.Sprintf("UPDATE %s SET deleted_at = NOW() WHERE deleted_at IS NULL", r.tableName())
@@ -287,7 +288,7 @@ func (r *repo[T]) SoftDeleteAll(ctx context.Context) (int64, error) {
 
 func (r *repo[T]) Restore(ctx context.Context, id any) error {
 	var t T
-	if !modelHasSoftDelete(reflect.TypeOf(t)) {
+	if !core.ModelHasSoftDelete(reflect.TypeOf(t)) {
 		return &ORMError{Code: ErrCodeValidation, Message: "restore not supported: missing deleted_at column"}
 	}
 	query := fmt.Sprintf("UPDATE %s SET deleted_at = NULL WHERE id = $1", r.tableName())
@@ -297,7 +298,7 @@ func (r *repo[T]) Restore(ctx context.Context, id any) error {
 
 func (r *repo[T]) PurgeTrashed(ctx context.Context) (int64, error) {
 	var t T
-	if !modelHasSoftDelete(reflect.TypeOf(t)) {
+	if !core.ModelHasSoftDelete(reflect.TypeOf(t)) {
 		return 0, &ORMError{Code: ErrCodeValidation, Message: "purge not supported: missing deleted_at column"}
 	}
 	query := fmt.Sprintf("DELETE FROM %s WHERE deleted_at IS NOT NULL", r.tableName())
@@ -314,7 +315,7 @@ func (r *repo[T]) Find(ctx context.Context, conditions ...Condition) ([]*T, erro
 		qb = qb.Where(c.Expr, c.Args...)
 	}
 	var t T
-	if modelHasSoftDelete(reflect.TypeOf(t)) {
+	if core.ModelHasSoftDelete(reflect.TypeOf(t)) {
 		switch r.mode {
 		case softModeOnlyTrashed:
 			qb = qb.Where("deleted_at IS NOT NULL")
@@ -342,7 +343,7 @@ func (r *repo[T]) FindOne(ctx context.Context, conditions ...Condition) (*T, err
 		qb = qb.Where(c.Expr, c.Args...)
 	}
 	var t T
-	if modelHasSoftDelete(reflect.TypeOf(t)) {
+	if core.ModelHasSoftDelete(reflect.TypeOf(t)) {
 		switch r.mode {
 		case softModeOnlyTrashed:
 			qb = qb.Where("deleted_at IS NOT NULL")
@@ -368,7 +369,7 @@ func (r *repo[T]) Count(ctx context.Context, conditions ...Condition) (int64, er
 		qb = qb.Where(c.Expr, c.Args...)
 	}
 	var t T
-	if modelHasSoftDelete(reflect.TypeOf(t)) {
+	if core.ModelHasSoftDelete(reflect.TypeOf(t)) {
 		switch r.mode {
 		case softModeOnlyTrashed:
 			qb = qb.Where("deleted_at IS NOT NULL")
@@ -428,7 +429,7 @@ func (r *repo[T]) FindPage(ctx context.Context, page PageRequest, conditions ...
 		qb = qb.Where(c.Expr, c.Args...)
 	}
 	var t T
-	if modelHasSoftDelete(reflect.TypeOf(t)) {
+	if core.ModelHasSoftDelete(reflect.TypeOf(t)) {
 		switch r.mode {
 		case softModeOnlyTrashed:
 			qb = qb.Where("deleted_at IS NOT NULL")
@@ -492,14 +493,14 @@ func (r *repo[T]) CreateCopyFrom(ctx context.Context, entities []*T, columns ...
 func (r *repo[T]) extractValuesByColumns(entity *T, columns []string) ([]any, error) {
 	val := reflect.Indirect(reflect.ValueOf(entity))
 	typ := val.Type()
-	mapper := structMapper(typ)
+	mapper := core.StructMapper(typ)
 	out := make([]any, len(columns))
 	for i, col := range columns {
-		fi, ok := mapper.fieldsByColumn[strings.ToLower(col)]
+		fi, ok := mapper.FieldsByColumn[strings.ToLower(col)]
 		if !ok {
 			return nil, &ORMError{Code: ErrCodeValidation, Message: fmt.Sprintf("unknown column: %s", col)}
 		}
-		out[i] = val.FieldByIndex(fi.index).Interface()
+		out[i] = val.FieldByIndex(fi.Index).Interface()
 	}
 	return out, nil
 }
@@ -509,7 +510,7 @@ func (r *repo[T]) Upsert(ctx context.Context, entity *T, conflictCols []string, 
 	// Build from reflection
 	val := reflect.Indirect(reflect.ValueOf(entity))
 	typ := val.Type()
-	mapper := structMapper(typ)
+	mapper := core.StructMapper(typ)
 	cols := []string{}
 	placeholders := []string{}
 	args := []any{}
@@ -521,9 +522,9 @@ func (r *repo[T]) Upsert(ctx context.Context, entity *T, conflictCols []string, 
 		}
 		col := f.Tag.Get("db")
 		if col == "" {
-			col = toSnakeCase(f.Name)
+			col = core.ToSnakeCase(f.Name)
 		}
-		if mapper.autoIncrement && strings.EqualFold(col, mapper.primaryColumn) {
+		if mapper.AutoIncrement && strings.EqualFold(col, mapper.PrimaryColumn) {
 			continue
 		}
 		cols = append(cols, col)
@@ -561,7 +562,7 @@ func (r *repo[T]) onUpdateNowColumns(typ reflect.Type) map[string]bool {
 			if strings.EqualFold(p, "on_update:now()") {
 				col := f.Tag.Get("db")
 				if col == "" {
-					col = toSnakeCase(f.Name)
+					col = core.ToSnakeCase(f.Name)
 				}
 				out[col] = true
 			}

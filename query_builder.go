@@ -7,6 +7,9 @@ import (
 	"reflect"
 	"strings"
 	"time"
+
+	core "github.com/kintsdev/norm/internal/core"
+	sqlutil "github.com/kintsdev/norm/internal/sqlutil"
 )
 
 // QueryBuilder provides a fluent API for building SQL queries
@@ -79,7 +82,7 @@ func (qb *QueryBuilder) Before(column string, value any) *QueryBuilder {
 }
 
 func (qb *QueryBuilder) Raw(sql string, args ...any) *QueryBuilder {
-	qb.raw = convertQMarksToPgPlaceholders(sql)
+	qb.raw = sqlutil.ConvertQMarksToPgPlaceholders(sql)
 	qb.args = append(qb.args, args...)
 	qb.isRaw = true
 	return qb
@@ -110,7 +113,7 @@ func (qb *QueryBuilder) buildSelect() (string, []any) {
 	if len(qb.wheres) > 0 {
 		sb.WriteString(" WHERE ")
 		where := strings.Join(qb.wheres, " AND ")
-		where = convertQMarksToPgPlaceholders(where)
+		where = sqlutil.ConvertQMarksToPgPlaceholders(where)
 		sb.WriteString(where)
 	}
 	// keyset
@@ -176,7 +179,7 @@ func (qb *QueryBuilder) Find(ctx context.Context, dest any) error {
 		}
 		sliceVal := rv.Elem()
 		elemType := sliceVal.Type().Elem()
-		mapper := structMapper(elemType)
+		mapper := core.StructMapper(elemType)
 		for rows.Next() {
 			vals, err := rows.Values()
 			if err != nil {
@@ -186,8 +189,8 @@ func (qb *QueryBuilder) Find(ctx context.Context, dest any) error {
 			elemPtr := reflect.New(elemType)
 			for i, v := range vals {
 				col := strings.ToLower(string(fds[i].Name))
-				if fi, ok := mapper.fieldsByColumn[col]; ok {
-					setFieldByIndex(elemPtr, fi.index, v)
+				if fi, ok := mapper.FieldsByColumn[col]; ok {
+					core.SetFieldByIndex(elemPtr, fi.Index, v)
 				}
 			}
 			sliceVal.Set(reflect.Append(sliceVal, elemPtr.Elem()))
@@ -256,7 +259,7 @@ func (qb *QueryBuilder) buildDelete() (string, []any) {
 	if len(qb.wheres) > 0 {
 		sb.WriteString(" WHERE ")
 		where := strings.Join(qb.wheres, " AND ")
-		where = convertQMarksToPgPlaceholders(where)
+		where = sqlutil.ConvertQMarksToPgPlaceholders(where)
 		sb.WriteString(where)
 	}
 	return sb.String(), qb.args
@@ -280,19 +283,7 @@ func (qb *QueryBuilder) Delete(ctx context.Context) (int64, error) {
 }
 
 // convert '?' placeholders to $1, $2... used by pgx
-func convertQMarksToPgPlaceholders(s string) string {
-	var sb strings.Builder
-	index := 1
-	for _, r := range s {
-		if r == '?' {
-			sb.WriteString(fmt.Sprintf("$%d", index))
-			index++
-		} else {
-			sb.WriteRune(r)
-		}
-	}
-	return sb.String()
-}
+// moved to internal/sqlutil
 
 // Exec executes a raw statement
 func (qb *QueryBuilder) Exec(ctx context.Context) error {
@@ -359,7 +350,7 @@ func (qb *QueryBuilder) buildInsert() (string, []any) {
 		if qb.updateSetExpr != "" {
 			sb.WriteString("DO UPDATE SET ")
 			// convert ? to $n in set expr and append args
-			set := convertQMarksToPgPlaceholders(qb.updateSetExpr)
+			set := sqlutil.ConvertQMarksToPgPlaceholders(qb.updateSetExpr)
 			// We need to renumber placeholders to continue after current argIdx
 			// Simplify: assume set uses only ? placeholders; replace $1.. with proper indexes by rebuilding
 			// We'll append args and rely that set has $? style per convert function
@@ -450,7 +441,7 @@ func (qb *QueryBuilder) buildUpdate() (string, []any) {
 	sb.WriteString(qb.table)
 	sb.WriteString(" SET ")
 	// convert and place args
-	set := convertQMarksToPgPlaceholders(qb.updateSetExpr)
+	set := sqlutil.ConvertQMarksToPgPlaceholders(qb.updateSetExpr)
 	// Build WHERE
 	args := make([]any, 0)
 	// Renumber $n to start at 1 for set
@@ -466,7 +457,7 @@ func (qb *QueryBuilder) buildUpdate() (string, []any) {
 		where := strings.Join(qb.wheres, " AND ")
 		// shift where placeholders after set args
 		setCount := countQ
-		whereConv := convertQMarksToPgPlaceholders(where)
+		whereConv := sqlutil.ConvertQMarksToPgPlaceholders(where)
 		for i := 1; i <= strings.Count(where, "?"); i++ {
 			whereConv = strings.ReplaceAll(whereConv, fmt.Sprintf("$%d", i), fmt.Sprintf("$%d", setCount+i))
 		}
@@ -543,7 +534,7 @@ func (qb *QueryBuilder) InsertStruct(ctx context.Context, entity any) (int64, er
 		}
 		col := f.Tag.Get("db")
 		if col == "" {
-			col = toSnakeCase(f.Name)
+			col = core.ToSnakeCase(f.Name)
 		}
 		orm := f.Tag.Get("orm")
 		fv := v.Field(i)
@@ -570,7 +561,7 @@ func (qb *QueryBuilder) UpdateStructByPK(ctx context.Context, entity any, pkColu
 		}
 		col := f.Tag.Get("db")
 		if col == "" {
-			col = toSnakeCase(f.Name)
+			col = core.ToSnakeCase(f.Name)
 		}
 		fv := v.Field(i).Interface()
 		if strings.EqualFold(col, pkColumn) {

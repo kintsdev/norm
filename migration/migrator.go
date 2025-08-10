@@ -25,7 +25,7 @@ type PlanResult struct {
 }
 
 // Plan computes a safe migration plan for given models (public schema)
-func (m *Migrator) Plan(ctx context.Context, models ...interface{}) (PlanResult, error) {
+func (m *Migrator) Plan(ctx context.Context, models ...any) (PlanResult, error) {
 	plan := PlanResult{}
 	// ensure migrations table exists in plan as safe
 	plan.Statements = append(plan.Statements, `CREATE TABLE IF NOT EXISTS schema_migrations (version BIGINT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), checksum TEXT)`)
@@ -114,7 +114,7 @@ func (m *Migrator) Plan(ctx context.Context, models ...interface{}) (PlanResult,
 }
 
 // AutoMigrate is a placeholder implementation
-func (m *Migrator) AutoMigrate(ctx context.Context, models ...interface{}) error {
+func (m *Migrator) AutoMigrate(ctx context.Context, models ...any) error {
 	plan, err := m.Plan(ctx, models...)
 	if err != nil {
 		return err

@@ -24,7 +24,7 @@ type ORMError struct {
 	Message  string
 	Internal error
 	Query    string
-	Args     []interface{}
+	Args     []any
 }
 
 func (e *ORMError) Error() string { return e.Message }
