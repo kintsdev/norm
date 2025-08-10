@@ -11,6 +11,7 @@ import (
 
 // Benchmarks below reuse global kn from TestMain in e2e_test.go
 
+// BenchmarkE2E_InsertUsers measures end-to-end insert throughput via repository.Create.
 func BenchmarkE2E_InsertUsers(b *testing.B) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -25,6 +26,7 @@ func BenchmarkE2E_InsertUsers(b *testing.B) {
 	}
 }
 
+// BenchmarkE2E_FindPage measures repository pagination path including COUNT and SELECT.
 func BenchmarkE2E_FindPage(b *testing.B) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -42,6 +44,7 @@ func BenchmarkE2E_FindPage(b *testing.B) {
 	}
 }
 
+// BenchmarkE2E_QueryBuilderScanStructs measures scanning into structs for a page-sized read.
 func BenchmarkE2E_QueryBuilderScanStructs(b *testing.B) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -62,6 +65,7 @@ func BenchmarkE2E_QueryBuilderScanStructs(b *testing.B) {
 	}
 }
 
+// BenchmarkE2E_CopyFrom measures bulk insert throughput using pgx CopyFrom.
 func BenchmarkE2E_CopyFrom(b *testing.B) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -87,6 +91,7 @@ func BenchmarkE2E_CopyFrom(b *testing.B) {
 	}
 }
 
+// BenchmarkE2E_Upsert measures INSERT ... ON CONFLICT DO UPDATE path.
 func BenchmarkE2E_Upsert(b *testing.B) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -102,6 +107,7 @@ func BenchmarkE2E_Upsert(b *testing.B) {
 	}
 }
 
+// BenchmarkE2E_UpdatePartial measures partial update performance including on_update:now() handling.
 func BenchmarkE2E_UpdatePartial(b *testing.B) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -117,6 +123,7 @@ func BenchmarkE2E_UpdatePartial(b *testing.B) {
 	}
 }
 
+// BenchmarkE2E_TxCommit measures cost of beginning/committing a transaction performing a single insert.
 func BenchmarkE2E_TxCommit(b *testing.B) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -131,7 +138,9 @@ func BenchmarkE2E_TxCommit(b *testing.B) {
 	}
 }
 
+// BenchmarkE2E_RawQueries measures basic Raw() DML/SELECT throughput.
 func BenchmarkE2E_RawQueries(b *testing.B) {
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	_, _ = kn.Pool().Exec(ctx, "TRUNCATE calc_test")
