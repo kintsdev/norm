@@ -1010,6 +1010,28 @@ func TestIdentifierQuotingOnReservedColumn(t *testing.T) {
 	}
 }
 
+func TestIdentifierQuotingHelpersInBuilder(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	// create table with reserved and mixed-case identifiers
+	_, _ = kn.Pool().Exec(ctx, `DROP TABLE IF EXISTS qhelpers`)
+	if _, err := kn.Pool().Exec(ctx, `CREATE TABLE qhelpers ("Order" TEXT, "user.name" TEXT)`); err != nil {
+		t.Fatalf("create qhelpers: %v", err)
+	}
+	// insert using raw to seed
+	if _, err := kn.Pool().Exec(ctx, `INSERT INTO qhelpers("Order", "user.name") VALUES ($1,$2)`, "A1", "bob"); err != nil {
+		t.Fatalf("seed qhelpers: %v", err)
+	}
+	// select via builder quoting helpers
+	var rows []map[string]any
+	if err := kn.Query().TableQ("qhelpers").SelectQI("Order", "user.name").Find(ctx, &rows); err != nil {
+		t.Fatalf("select qhelpers: %v", err)
+	}
+	if len(rows) != 1 || fmt.Sprint(rows[0]["Order"]) != "A1" || fmt.Sprint(rows[0]["user.name"]) != "bob" {
+		t.Fatalf("unexpected qhelpers rows: %+v", rows)
+	}
+}
+
 func TestErrorMapping_DuplicateAndFKViolation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

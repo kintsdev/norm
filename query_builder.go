@@ -50,6 +50,48 @@ func (kn *KintsNorm) Query() *QueryBuilder {
 	return &QueryBuilder{kn: kn, exec: exec}
 }
 
+// QuoteIdentifier safely quotes a SQL identifier by wrapping in double quotes and escaping embedded quotes
+func QuoteIdentifier(identifier string) string {
+	// escape existing double quotes by doubling them
+	esc := strings.ReplaceAll(identifier, "\"", "\"\"")
+	return fmt.Sprintf("\"%s\"", esc)
+}
+
+// quoteQualified handles schema-qualified names by quoting each part separated by '.'
+func quoteQualified(name string) string {
+	if strings.TrimSpace(name) == "" {
+		return name
+	}
+	parts := strings.Split(name, ".")
+	for i, p := range parts {
+		parts[i] = QuoteIdentifier(strings.TrimSpace(p))
+	}
+	return strings.Join(parts, ".")
+}
+
+// TableQ sets the table using quoted identifier(s) (supports schema-qualified like schema.table)
+func (qb *QueryBuilder) TableQ(name string) *QueryBuilder {
+	qb.table = quoteQualified(name)
+	return qb
+}
+
+// SelectQ appends quoted column identifiers
+func (qb *QueryBuilder) SelectQ(columns ...string) *QueryBuilder {
+	for _, c := range columns {
+		qb.columns = append(qb.columns, quoteQualified(c))
+	}
+	return qb
+}
+
+// SelectQI appends fully quoted identifiers as-is (does not split on '.')
+// Useful for columns that themselves contain dots in their names
+func (qb *QueryBuilder) SelectQI(columns ...string) *QueryBuilder {
+	for _, c := range columns {
+		qb.columns = append(qb.columns, QuoteIdentifier(c))
+	}
+	return qb
+}
+
 func (qb *QueryBuilder) Table(name string) *QueryBuilder {
 	qb.table = name
 	return qb

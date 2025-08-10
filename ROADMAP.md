@@ -37,7 +37,7 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [x] Condition DSL (`Eq/Ne/Gt/Ge/Lt/Le/In/And/Or`)
 - [x] Keyset pagination (`After/Before`)
 - [x] Struct ops: `InsertStruct`, `UpdateStructByPK`
-- [ ] Identifier-quoting helpers in builder API (safe column/table refs)
+- [x] Identifier-quoting helpers in builder API (safe column/table refs) (e2e covered)
 - [ ] Named parameters support
 - [ ] Prebuilt common scopes (e.g., by date ranges)
 
