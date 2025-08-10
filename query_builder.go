@@ -42,7 +42,13 @@ type QueryBuilder struct {
 }
 
 // Query creates a new query builder
-func (kn *KintsNorm) Query() *QueryBuilder { return &QueryBuilder{kn: kn, exec: kn.pool} }
+func (kn *KintsNorm) Query() *QueryBuilder {
+	exec := dbExecuter(kn.pool)
+	if kn.breaker != nil {
+		exec = breakerExecuter{kn: kn, exec: exec}
+	}
+	return &QueryBuilder{kn: kn, exec: exec}
+}
 
 func (qb *QueryBuilder) Table(name string) *QueryBuilder {
 	qb.table = name

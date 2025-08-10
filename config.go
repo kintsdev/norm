@@ -24,6 +24,11 @@ type Config struct {
 	RetryAttempts          int           // transient error retries (default 0 = no retry)
 	RetryBackoff           time.Duration // backoff between retries
 	StatementCacheCapacity int           // pgx per-conn statement cache capacity (0 = default)
+	// Circuit breaker
+	CircuitBreakerEnabled   bool
+	CircuitFailureThreshold int           // consecutive failures to open the circuit (default 5 if 0)
+	CircuitOpenTimeout      time.Duration // how long to stay open before half-open trial (default 30s if 0)
+	CircuitHalfOpenMaxCalls int           // allowed concurrent trial calls in half-open (default 1 if 0)
 }
 
 // ConnString returns a PostgreSQL connection string compatible with pgx

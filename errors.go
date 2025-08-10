@@ -2,6 +2,7 @@ package norm
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -55,6 +56,10 @@ func wrapPgError(err error, query string, args []any) error {
 	var pgErr *pgconn.PgError
 	if errors.Is(err, contextCanceledErr()) {
 		return &ORMError{Code: ErrCodeTransaction, Message: err.Error(), Internal: err, Query: query, Args: args}
+	}
+	// pass through circuit breaker open error as connection error with message
+	if isCircuitOpenError(err) {
+		return &ORMError{Code: ErrCodeConnection, Message: fmt.Sprintf("circuit open: %v", err), Internal: err, Query: query, Args: args}
 	}
 	if errors.As(err, &pgErr) {
 		return &ORMError{Code: mapPgErrorCode(pgErr.Code), Message: pgErr.Message, Internal: err, Query: query, Args: args}

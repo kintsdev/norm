@@ -57,5 +57,18 @@ func (t *txImpl) Repository() Repository[map[string]any] {
 	return NewRepositoryWithExecutor[map[string]any](t.kn, t.tx)
 }
 
-func (t *txImpl) Exec() dbExecuter     { return t.tx }
-func (t *txImpl) Query() *QueryBuilder { qb := t.kn.Query(); qb.exec = t.tx; return qb }
+func (t *txImpl) Exec() dbExecuter {
+	if t.kn.breaker != nil {
+		return breakerExecuter{kn: t.kn, exec: t.tx}
+	}
+	return t.tx
+}
+func (t *txImpl) Query() *QueryBuilder {
+	qb := t.kn.Query()
+	if t.kn.breaker != nil {
+		qb.exec = breakerExecuter{kn: t.kn, exec: t.tx}
+	} else {
+		qb.exec = t.tx
+	}
+	return qb
+}

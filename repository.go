@@ -52,7 +52,13 @@ const (
 )
 
 // NewRepository creates a new generic repository
-func NewRepository[T any](kn *KintsNorm) Repository[T] { return &repo[T]{kn: kn, exec: kn.pool} }
+func NewRepository[T any](kn *KintsNorm) Repository[T] {
+	exec := dbExecuter(kn.pool)
+	if kn.breaker != nil {
+		exec = breakerExecuter{kn: kn, exec: exec}
+	}
+	return &repo[T]{kn: kn, exec: exec}
+}
 
 // NewRepositoryWithExecutor creates a repository bound to a specific executor (pool or tx)
 func NewRepositoryWithExecutor[T any](kn *KintsNorm, exec dbExecuter) Repository[T] {
@@ -230,7 +236,7 @@ func (r *repo[T]) UpdatePartial(ctx context.Context, id any, fields map[string]a
 			sets = append(sets, fmt.Sprintf("%s = NOW()", col))
 		}
 		query := fmt.Sprintf("UPDATE %s SET %s WHERE id = $1", r.tableName(), strings.Join(sets, ", "))
-		_, err := r.kn.pool.Exec(ctx, query, id)
+		_, err := r.exec.Exec(ctx, query, id)
 		return err
 	}
 	idx := 1
@@ -251,7 +257,7 @@ func (r *repo[T]) UpdatePartial(ctx context.Context, id any, fields map[string]a
 	}
 	args = append(args, id)
 	query := fmt.Sprintf("UPDATE %s SET %s WHERE id = $%d", r.tableName(), strings.Join(sets, ", "), idx)
-	_, err := r.kn.pool.Exec(ctx, query, args...)
+	_, err := r.exec.Exec(ctx, query, args...)
 	return err
 }
 

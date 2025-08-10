@@ -13,6 +13,7 @@ Production-ready, PGX v5 tabanlı hafif ORM ve query builder (PostgreSQL). Bağl
 - Transaction yönetimi: `TxManager`, transaction-bound QueryBuilder
 - Read/Write splitting: read pool opsiyonel, fallback
 - Retry: exponential backoff
+ - Circuit Breaker: optional open/half-open/closed with metrics hooks
 
 Not: OpenTelemetry/Prometheus entegrasyonları şimdilik kapsam dışıdır.
 
@@ -87,6 +88,7 @@ Yakında: manuel (dosya tabanlı) Up/Down migrasyonları, rollback desteği, dro
 - `Config.ReadOnlyConnString` verilirse read pool açılır; `QueryRead()` ile kullanılır
 - İleride: read operasyonlarını otomatik olarak read pool’a yönlendirme
 - Retry: `RetryAttempts` ve `RetryBackoff` (exponential + jitter)
+- Circuit Breaker: `CircuitBreakerEnabled`, `CircuitFailureThreshold`, `CircuitOpenTimeout`, `CircuitHalfOpenMaxCalls`
 
 ### Testler
 - `Makefile` ile Postgres 17.5 docker ve kapsamlı e2e testleri

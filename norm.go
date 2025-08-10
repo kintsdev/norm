@@ -18,6 +18,7 @@ type KintsNorm struct {
 	logger   Logger
 	metrics  Metrics
 	migrator *migration.Migrator
+	breaker  *circuitBreaker
 }
 
 // New creates a new KintsNorm instance, initializing the pgx pool
@@ -45,6 +46,19 @@ func New(config *Config, opts ...Option) (*KintsNorm, error) {
 		}
 	}
 	kn.migrator = migration.NewMigrator(kn.pool)
+	// initialize circuit breaker if enabled
+	if config.CircuitBreakerEnabled {
+		kn.breaker = newCircuitBreaker(circuitBreakerConfig{
+			failureThreshold:    defaultIfZeroInt(config.CircuitFailureThreshold, 5),
+			openTimeout:         defaultIfZeroDuration(config.CircuitOpenTimeout, 30*time.Second),
+			halfOpenMaxInFlight: defaultIfZeroInt(config.CircuitHalfOpenMaxCalls, 1),
+			onStateChange: func(state string) {
+				if kn.metrics != nil {
+					kn.metrics.CircuitStateChanged(state)
+				}
+			},
+		})
+	}
 	return kn, nil
 }
 
@@ -67,6 +81,20 @@ func NewWithConnString(connString string, opts ...Option) (*KintsNorm, error) {
 	}
 	kn.migrator = migration.NewMigrator(kn.pool)
 	return kn, nil
+}
+
+// default helpers (kept here to avoid extra utils file)
+func defaultIfZeroInt(v, def int) int {
+	if v == 0 {
+		return def
+	}
+	return v
+}
+func defaultIfZeroDuration(v, def time.Duration) time.Duration {
+	if v == 0 {
+		return def
+	}
+	return v
 }
 
 // AutoMigrate runs schema migrations for given models
@@ -107,6 +135,10 @@ func (kn *KintsNorm) ReadPool() *pgxpool.Pool {
 // QueryRead uses the read pool for building queries (falls back to primary)
 func (kn *KintsNorm) QueryRead() *QueryBuilder {
 	qb := kn.Query()
-	qb.exec = kn.ReadPool()
+	exec := dbExecuter(kn.ReadPool())
+	if kn.breaker != nil {
+		exec = breakerExecuter{kn: kn, exec: exec}
+	}
+	qb.exec = exec
 	return qb
 }

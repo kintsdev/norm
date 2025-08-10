@@ -85,6 +85,7 @@ func (kn *KintsNorm) acquireConn(ctx context.Context) (pgx.Tx, func(context.Cont
 
 // withRetry executes fn with basic retry on transient errors
 func (kn *KintsNorm) withRetry(ctx context.Context, fn func() error) error {
+	// Circuit check is handled at executor-level; do not duplicate here
 	attempts := 0
 	baseBackoff := 0 * time.Millisecond
 	if kn.config != nil {
