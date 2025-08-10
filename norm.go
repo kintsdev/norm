@@ -187,6 +187,9 @@ func (kn *KintsNorm) Close() error {
 	if kn.pool != nil {
 		kn.pool.Close()
 	}
+	if kn.readPool != nil {
+		kn.readPool.Close()
+	}
 	return nil
 }
 
