@@ -142,6 +142,40 @@ make test-e2e
 make db-down
 ```
 
+### Benchmarks
+
+Micro and end-to-end benchmarks are included. Run micro (no DB required) or full (requires Postgres env like the e2e tests).
+
+Run all benchmarks (micro + e2e):
+
+```bash
+go test -bench=. -benchmem -run=^$ ./...
+```
+
+Only micro (root package):
+
+```bash
+go test -bench=. -benchmem -run=^$
+```
+
+Examples (Apple M3, Go 1.22, local PG):
+
+- Placeholder conversion and builder (ns–µs level)
+  - `ConvertQMarksToPgPlaceholders`: ~250 ns/op, 208 B/op, 9 alloc/op
+  - `ConvertNamedToPgPlaceholders` (scalars/reuse, slice expansion): ~390–690 ns/op
+  - `StructMapper` (cached): ~9 ns/op, 0 alloc/op
+  - `Build SELECT with JOINs`: ~1.1 µs/op
+
+- E2E (depends on DB latency)
+  - `FindPage` (COUNT + SELECT): ~0.3 ms/op
+  - `Scan 100 rows`: ~0.25–0.30 ms/op
+  - `CopyFrom(500 rows)`: ~0.08 ms/op
+  - Single-row writes (Insert/Upsert/Tx): ~6–7 ms/op
+
+Notes:
+- Results vary by CPU, Go version, and Postgres settings; numbers above are indicative.
+- Micro benchmarks live in `bench_test.go`, e2e in `e2e/bench_e2e_test.go`.
+
 ### License
 
 MIT
