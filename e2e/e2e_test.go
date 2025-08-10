@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1179,6 +1180,87 @@ func TestEagerAndLazyLoadHelpers(t *testing.T) {
 	lazy, err := kintsnorm.LazyLoadMany[Profile](ctx, kn, 1, "user_id")
 	if err != nil || len(lazy) != 2 {
 		t.Fatalf("lazy load: %v len=%d", err, len(lazy))
+	}
+}
+
+// --- Cache hooks e2e ---
+type memCache struct{ store atomic.Value }
+
+func newMemCache() *memCache {
+	m := &memCache{}
+	m.store.Store(map[string][]byte{})
+	return m
+}
+
+func (m *memCache) Get(ctx context.Context, key string) ([]byte, bool, error) {
+	mp := m.store.Load().(map[string][]byte)
+	v, ok := mp[key]
+	return v, ok, nil
+}
+func (m *memCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	old := m.store.Load().(map[string][]byte)
+	cp := make(map[string][]byte, len(old)+1)
+	for k, v := range old {
+		cp[k] = v
+	}
+	cp[key] = value
+	m.store.Store(cp)
+	return nil
+}
+func (m *memCache) Invalidate(ctx context.Context, keys ...string) error {
+	old := m.store.Load().(map[string][]byte)
+	cp := make(map[string][]byte, len(old))
+	for k, v := range old {
+		cp[k] = v
+	}
+	for _, k := range keys {
+		delete(cp, k)
+	}
+	m.store.Store(cp)
+	return nil
+}
+
+func TestCacheReadThroughAndInvalidation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	host := getenvDefault("PGHOST", "127.0.0.1")
+	port := getenvDefault("PGPORT", "5432")
+	user := getenvDefault("PGUSER", "postgres")
+	pass := getenvDefault("PGPASSWORD", "postgres")
+	db := getenvDefault("PGDATABASE", "postgres")
+
+	dsn := fmt.Sprintf("host=%s port=%s dbname=%s user=%s password=%s sslmode=disable", host, port, db, user, pass)
+	cache := newMemCache()
+	knc, err := kintsnorm.NewWithConnString(dsn, kintsnorm.WithCache(cache))
+	if err != nil {
+		t.Fatalf("new with cache: %v", err)
+	}
+	defer func() { _ = knc.Close() }()
+
+	_, _ = knc.Pool().Exec(ctx, "TRUNCATE users RESTART IDENTITY CASCADE")
+	// seed
+	_, _ = knc.Pool().Exec(ctx, "INSERT INTO users(email, username, password) VALUES ($1,$2,$3)", "c1@example.com", "c1", "x")
+
+	key := "users:by_email:c1@example.com"
+	var rows []map[string]any
+	// miss -> load -> set
+	if err := knc.Query().Table("users").Select("email", "username").Where("email = ?", "c1@example.com").WithCacheKey(key, 5*time.Minute).Find(ctx, &rows); err != nil {
+		t.Fatalf("find with cache: %v", err)
+	}
+	if _, ok, _ := cache.Get(ctx, key); !ok {
+		t.Fatalf("expected cache set after read-through")
+	}
+	// write -> invalidate
+	if _, err := knc.Pool().Exec(ctx, "UPDATE users SET username=$1 WHERE email=$2", "c1x", "c1@example.com"); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	// simulate invalidation via builder hook
+	if err := knc.Query().Raw("SELECT 1").WithInvalidateKeys(key).Exec(ctx); err != nil {
+		t.Fatalf("invalidate exec: %v", err)
+	}
+	if _, ok, _ := cache.Get(ctx, key); ok {
+		t.Fatalf("expected cache invalidated")
 	}
 }
 

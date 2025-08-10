@@ -2,6 +2,7 @@ package norm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -39,6 +40,10 @@ type QueryBuilder struct {
 	afterValue   any
 	beforeColumn string
 	beforeValue  any
+	// cache options
+	cacheKey   string
+	cacheTTL   time.Duration
+	invalidate []string
 }
 
 // Query creates a new query builder
@@ -195,6 +200,19 @@ func (qb *QueryBuilder) WhereCond(c Condition) *QueryBuilder {
 	return qb.Where(c.Expr, c.Args...)
 }
 
+// WithCacheKey enables read-through caching for Find/First on this builder. TTL<=0 means no Set.
+func (qb *QueryBuilder) WithCacheKey(key string, ttl time.Duration) *QueryBuilder {
+	qb.cacheKey = key
+	qb.cacheTTL = ttl
+	return qb
+}
+
+// WithInvalidateKeys sets keys to invalidate after write operations (Exec/Insert/Update/Delete)
+func (qb *QueryBuilder) WithInvalidateKeys(keys ...string) *QueryBuilder {
+	qb.invalidate = append(qb.invalidate, keys...)
+	return qb
+}
+
 func (qb *QueryBuilder) buildSelect() (string, []any) {
 	if qb.isRaw {
 		return qb.raw, qb.args
@@ -246,6 +264,19 @@ func (qb *QueryBuilder) Find(ctx context.Context, dest any) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// optional read-through cache
+	if qb.kn.cache != nil && qb.cacheKey != "" {
+		if data, ok, _ := qb.kn.cache.Get(ctx, qb.cacheKey); ok {
+			// Only support *[]map[string]any for now
+			if dptr, ok2 := dest.(*[]map[string]any); ok2 {
+				var cached []map[string]any
+				if err := json.Unmarshal(data, &cached); err == nil {
+					*dptr = append((*dptr)[:0], cached...)
+					return nil
+				}
+			}
+		}
+	}
 	query, args := qb.buildSelect()
 	started := time.Now()
 	rows, err := qb.exec.Query(ctx, query, args...)
@@ -272,7 +303,16 @@ func (qb *QueryBuilder) Find(ctx context.Context, dest any) error {
 			}
 			*d = append(*d, m)
 		}
-		return rows.Err()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		// cache set for *[]map[string]any only for now
+		if qb.kn.cache != nil && qb.cacheKey != "" && qb.cacheTTL > 0 {
+			if out, err := json.Marshal(*d); err == nil {
+				_ = qb.kn.cache.Set(ctx, qb.cacheKey, out, qb.cacheTTL)
+			}
+		}
+		return nil
 	default:
 		// reflection-based slice of structs
 		rv := reflect.ValueOf(dest)
@@ -297,7 +337,11 @@ func (qb *QueryBuilder) Find(ctx context.Context, dest any) error {
 			}
 			sliceVal.Set(reflect.Append(sliceVal, elemPtr.Elem()))
 		}
-		return rows.Err()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		// optional cache disabled for struct slices in minimal hook
+		return nil
 	}
 }
 
@@ -381,6 +425,9 @@ func (qb *QueryBuilder) Delete(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	if qb.kn.cache != nil && len(qb.invalidate) > 0 {
+		_ = qb.kn.cache.Invalidate(ctx, qb.invalidate...)
+	}
 	return int64(tag.RowsAffected()), nil
 }
 
@@ -397,7 +444,13 @@ func (qb *QueryBuilder) Exec(ctx context.Context) error {
 	if qb.kn.metrics != nil {
 		qb.kn.metrics.QueryDuration(time.Since(started), qb.raw)
 	}
-	return wrapPgError(err, qb.raw, qb.args)
+	if err != nil {
+		return wrapPgError(err, qb.raw, qb.args)
+	}
+	if qb.kn.cache != nil && len(qb.invalidate) > 0 {
+		_ = qb.kn.cache.Invalidate(ctx, qb.invalidate...)
+	}
+	return nil
 }
 
 // Insert builder
@@ -495,6 +548,9 @@ func (qb *QueryBuilder) ExecInsert(ctx context.Context, dest any) (int64, error)
 		if err != nil {
 			return 0, wrapPgError(err, query, args)
 		}
+		if qb.kn.cache != nil && len(qb.invalidate) > 0 {
+			_ = qb.kn.cache.Invalidate(ctx, qb.invalidate...)
+		}
 		return int64(tag.RowsAffected()), nil
 	}
 	// RETURNING path: scan into dest like Find
@@ -523,7 +579,13 @@ func (qb *QueryBuilder) ExecInsert(ctx context.Context, dest any) (int64, error)
 			*d = append(*d, m)
 			count++
 		}
-		return count, rows.Err()
+		if err := rows.Err(); err != nil {
+			return count, err
+		}
+		if qb.kn.cache != nil && len(qb.invalidate) > 0 {
+			_ = qb.kn.cache.Invalidate(ctx, qb.invalidate...)
+		}
+		return count, nil
 	default:
 		return 0, &ORMError{Code: ErrCodeValidation, Message: "dest must be *[]map[string]any for RETURNING"}
 	}
@@ -590,6 +652,9 @@ func (qb *QueryBuilder) ExecUpdate(ctx context.Context, dest any) (int64, error)
 		if err != nil {
 			return 0, wrapPgError(err, query, args)
 		}
+		if qb.kn.cache != nil && len(qb.invalidate) > 0 {
+			_ = qb.kn.cache.Invalidate(ctx, qb.invalidate...)
+		}
 		return int64(tag.RowsAffected()), nil
 	}
 	started := time.Now()
@@ -617,7 +682,13 @@ func (qb *QueryBuilder) ExecUpdate(ctx context.Context, dest any) (int64, error)
 			*d = append(*d, m)
 			count++
 		}
-		return count, rows.Err()
+		if err := rows.Err(); err != nil {
+			return count, err
+		}
+		if qb.kn.cache != nil && len(qb.invalidate) > 0 {
+			_ = qb.kn.cache.Invalidate(ctx, qb.invalidate...)
+		}
+		return count, nil
 	default:
 		return 0, &ORMError{Code: ErrCodeValidation, Message: "dest must be *[]map[string]any for RETURNING"}
 	}

@@ -90,6 +90,11 @@ Yakında: manuel (dosya tabanlı) Up/Down migrasyonları, rollback desteği, dro
 - Retry: `RetryAttempts` ve `RetryBackoff` (exponential + jitter)
 - Circuit Breaker: `CircuitBreakerEnabled`, `CircuitFailureThreshold`, `CircuitOpenTimeout`, `CircuitHalfOpenMaxCalls`
 
+### Opsiyonel Cache Hookları
+- `WithCache(cache)` ile opsiyonel cache sağlayın (örn. Redis adaptörü)
+- Okuma: `Query().WithCacheKey(key, ttl).Find/First` read-through cache (minimal hook)
+- Yazma: `WithInvalidateKeys(keys...)` ile insert/update/delete/exec sonrası invalidation çağrısı
+
 ### Testler
 - `Makefile` ile Postgres 17.5 docker ve kapsamlı e2e testleri
 - Testler CRUD, soft delete, transaction, query builder, pagination, DSL, struct ops, migration diff/quoting’i kapsar

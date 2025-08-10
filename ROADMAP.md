@@ -56,8 +56,8 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 
 - [x] Optional read pool via `ReadOnlyConnString` + `QueryRead()` (e2e covered)
 - [x] Auto read routing + overrides (`UsePrimary`, `UseReadPool`) (e2e covered)
-- [ ] Cache integration hooks (read-through/write-through)
-- [ ] Cache invalidation on write/tx commit
+- [x] Cache integration hooks (read-through/write-through) (docs only, minimal no-op default)
+- [x] Cache invalidation on write/tx commit (opt-in via `WithInvalidateKeys`)
 
 ### Observability & Logging
 

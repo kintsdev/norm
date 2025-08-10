@@ -17,6 +17,7 @@ type KintsNorm struct {
 	config   *Config
 	logger   Logger
 	metrics  Metrics
+	cache    Cache
 	migrator *migration.Migrator
 	breaker  *circuitBreaker
 }
@@ -37,7 +38,7 @@ func New(config *Config, opts ...Option) (*KintsNorm, error) {
 		return nil, err
 	}
 
-	kn := &KintsNorm{pool: pool, config: config, logger: options.logger, metrics: options.metrics}
+	kn := &KintsNorm{pool: pool, config: config, logger: options.logger, metrics: options.metrics, cache: options.cache}
 	// optional read-only pool
 	if config.ReadOnlyConnString != "" {
 		rp, rerr := newPoolFromConnString(context.Background(), config.ReadOnlyConnString)
@@ -78,6 +79,7 @@ func NewWithConnString(connString string, opts ...Option) (*KintsNorm, error) {
 		config:  nil,
 		logger:  options.logger,
 		metrics: options.metrics,
+		cache:   options.cache,
 	}
 	kn.migrator = migration.NewMigrator(kn.pool)
 	return kn, nil
