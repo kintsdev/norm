@@ -11,7 +11,10 @@ Error codes and typical sources:
 - ErrCodeTransaction: serialization failures (PG 40001), context canceled, tx errors
 - ErrCodeMigration: migration-specific errors
 - ErrCodeValidation: bad inputs (wrong dest type, missing OrderBy for Last, etc.)
- - ErrCodeInvalidColumn: unknown/undefined column (PG 42703 or API-level column checks)
+- ErrCodeInvalidColumn: unknown/undefined column (PG 42703 or API-level column checks)
+- ErrCodeInvalidFunction: undefined function (PG 42883)
+- ErrCodeInvalidCast: invalid text representation / cast issues (PG 22P02)
+- ErrCodeStringTooLong: string data right truncation (PG 22001)
 
 PostgreSQL mapping (subset):
 
@@ -39,6 +42,12 @@ if err != nil {
       // 422 validation
     case norm.ErrCodeInvalidColumn:
       // 400-level invalid field/column
+    case norm.ErrCodeInvalidFunction:
+      // 400-level invalid function
+    case norm.ErrCodeInvalidCast:
+      // 400-level invalid cast/parse
+    case norm.ErrCodeStringTooLong:
+      // 400-level payload too long for column
     case norm.ErrCodeConnection:
       // 503 retryable
     }
@@ -69,5 +78,3 @@ Validation errors examples:
 Observability:
 
 - When logging is enabled, fields include `sql`, `args`, and `stmt` (inlined SQL). Use `WithLogParameterMasking(true)` to hide args and avoid inlining.
-
-

@@ -20,6 +20,9 @@ const (
 	ErrCodeValidation
 	// Specific validation subtypes
 	ErrCodeInvalidColumn
+	ErrCodeInvalidFunction
+	ErrCodeInvalidCast
+	ErrCodeStringTooLong
 )
 
 // ORMError is a structured error for norm
@@ -68,16 +71,19 @@ func mapPgErrorCode(pgCode string) ErrorCode {
 		"57P03", // cannot_connect_now
 		"53300": // too_many_connections
 		return ErrCodeConnection
-	// specific invalid column
+		// specific invalid column
 	case "42703": // undefined_column
 		return ErrCodeInvalidColumn
 	// validation / syntax / undefined objects / cast issues
 	case "42601", // syntax_error
-		"42883", // undefined_function
-		"42P01", // undefined_table
-		"22P02", // invalid_text_representation
-		"22001": // string_data_right_truncation
+		"42P01": // undefined_table (keep generic to avoid breaking callers/tests)
 		return ErrCodeValidation
+	case "42883": // undefined_function
+		return ErrCodeInvalidFunction
+	case "22P02": // invalid_text_representation
+		return ErrCodeInvalidCast
+	case "22001": // string_data_right_truncation
+		return ErrCodeStringTooLong
 	default:
 		return ErrCodeValidation
 	}
