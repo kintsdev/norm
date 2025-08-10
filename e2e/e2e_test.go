@@ -967,6 +967,29 @@ func TestMigrationPlanRenameAndTypeNullabilityWarnings(t *testing.T) {
 	}
 }
 
+func TestMigrationPlanFormatting(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	mg := migration.NewMigrator(kn.Pool())
+	plan, err := mg.Plan(ctx, &Rename{}, &TypeTest{})
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	out := migration.FormatPlan(plan)
+	// should contain header
+	if !strings.Contains(out, "Migration Plan") {
+		t.Fatalf("expected formatted output header, got: \n%s", out)
+	}
+	// should contain at least one section for a table or schema_migrations
+	if !(strings.Contains(out, "[type_tests]") || strings.Contains(out, "[schema_migrations]")) {
+		t.Fatalf("expected formatted output with table sections, got: \n%s", out)
+	}
+	// if warnings present, ensure section exists
+	if len(plan.Warnings) > 0 && !strings.Contains(out, "Warnings:") {
+		t.Fatalf("expected warnings section in formatted output")
+	}
+}
+
 func TestIdentifierQuotingOnReservedColumn(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

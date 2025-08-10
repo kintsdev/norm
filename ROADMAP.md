@@ -26,7 +26,7 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [x] Drop/rename column plan (diff) with explicit opt-in guards (apply-time)
 - [ ] Table drop/rename planning (explicit opt-in)
 - [x] Index/constraint drop diffing (apply-time opt-in)
-- [ ] Detailed plan formatting (grouping by table, severity)
+- [x] Detailed plan formatting (grouping by table, severity)
 
 ### Query Builder
 
