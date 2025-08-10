@@ -50,6 +50,44 @@ type FKPost struct {
 	CreatedAt time.Time `db:"created_at" norm:"not_null,default:now()"`
 }
 
+// MoneyTest -> money_tests (decimal type override)
+type MoneyTest struct {
+	ID        int64     `db:"id" norm:"primary_key,auto_increment"`
+	Amount    float64   `db:"amount" norm:"type:decimal(20,8)"`
+	CreatedAt time.Time `db:"created_at" norm:"not_null,default:now()"`
+}
+
+// Account -> accounts (composite unique on tenant_id+slug)
+type Account struct {
+	ID       int64  `db:"id" norm:"primary_key,auto_increment"`
+	TenantID int64  `db:"tenant_id" norm:"not_null,unique:tenant_slug"`
+	Slug     string `db:"slug" norm:"not_null,unique:tenant_slug"`
+}
+
+// PartialIdx -> partial_idxs (partial index on email when not deleted)
+type PartialIdx struct {
+	ID        int64      `db:"id" norm:"primary_key,auto_increment"`
+	Email     string     `db:"email" norm:"index,index_where:(deleted_at IS NULL)"`
+	DeletedAt *time.Time `db:"deleted_at"`
+}
+
+// IgnoreField -> ignore_fields (ignored column not created)
+type IgnoreField struct {
+	ID   int64  `db:"id" norm:"primary_key,auto_increment"`
+	Name string `db:"name"`
+	Temp string `db:"temp" norm:"-"`
+}
+
+// CascadeParent/CascadeChild for FK actions
+type CascadeParent struct {
+	ID   int64  `db:"id" norm:"primary_key,auto_increment"`
+	Name string `db:"name"`
+}
+type CascadeChild struct {
+	ID       int64 `db:"id" norm:"primary_key,auto_increment"`
+	ParentID int64 `db:"parent_id" norm:"not_null,fk:cascade_parents(id),on_delete:cascade,fk_name:fk_child_parent"`
+}
+
 var kn *kintsnorm.KintsNorm
 
 func TestMain(m *testing.M) {
@@ -89,7 +127,23 @@ func TestHealthAndMigrate(t *testing.T) {
 		t.Fatalf("health failed: %v", err)
 	}
 
-	if err := kn.AutoMigrate(&User{}, &Profile{}); err != nil {
+	// Plan and log statements for debugging then migrate
+	mg := migration.NewMigrator(kn.Pool())
+	plan, perr := mg.Plan(ctx, &User{}, &Profile{}, &MoneyTest{}, &Account{}, &PartialIdx{}, &IgnoreField{}, &CascadeParent{}, &CascadeChild{})
+	if perr != nil {
+		t.Fatalf("plan failed: %v", perr)
+	}
+	for _, s := range plan.Statements {
+		t.Logf("PLAN STMT: %s", s)
+	}
+	// Manually apply plan statements to detect any syntax issues precisely
+	for _, s := range plan.Statements {
+		if _, err := kn.Pool().Exec(ctx, s); err != nil {
+			t.Fatalf("failed executing plan stmt: %s; err=%v", s, err)
+		}
+	}
+	// Run automigrate to record schema_migrations entry
+	if err := kn.AutoMigrate(&User{}, &Profile{}, &MoneyTest{}, &Account{}, &PartialIdx{}, &IgnoreField{}, &CascadeParent{}, &CascadeChild{}); err != nil {
 		t.Fatalf("automigrate failed: %v", err)
 	}
 
@@ -131,6 +185,64 @@ func TestHealthAndMigrate(t *testing.T) {
 		t.Fatalf("expected idx_users_email to exist")
 	}
 
+	// verify MoneyTest.amount is DECIMAL(20,8)
+	var prec, scale int
+	if err := kn.Pool().QueryRow(ctx, `SELECT COALESCE(numeric_precision,0), COALESCE(numeric_scale,0) FROM information_schema.columns WHERE table_schema='public' AND table_name='money_tests' AND column_name='amount'`).Scan(&prec, &scale); err != nil {
+		t.Fatalf("inspect decimal: %v", err)
+	}
+	if prec != 20 || scale != 8 {
+		t.Fatalf("expected decimal(20,8), got (%d,%d)", prec, scale)
+	}
+
+	// composite unique on accounts(tenant_id, slug)
+	var hasUq bool
+	idxRows, err := kn.Pool().Query(ctx, `SELECT indexname, indexdef FROM pg_indexes WHERE schemaname='public' AND tablename='accounts'`)
+	if err != nil {
+		t.Fatalf("pg_indexes accounts: %v", err)
+	}
+	defer idxRows.Close()
+	for idxRows.Next() {
+		var name, def string
+		if err := idxRows.Scan(&name, &def); err != nil {
+			t.Fatalf("scan accounts idx: %v", err)
+		}
+		if strings.Contains(def, "UNIQUE") && strings.Contains(def, "tenant_id") && strings.Contains(def, "slug") {
+			hasUq = true
+		}
+	}
+	if !hasUq {
+		t.Fatalf("expected composite unique on accounts(tenant_id, slug)")
+	}
+
+	// partial index exists on partial_idxs(email)
+	var hasPartial bool
+	prow, err := kn.Pool().Query(ctx, `SELECT indexdef FROM pg_indexes WHERE schemaname='public' AND tablename='partial_idxs'`)
+	if err != nil {
+		t.Fatalf("pg_indexes partial: %v", err)
+	}
+	defer prow.Close()
+	for prow.Next() {
+		var def string
+		if err := prow.Scan(&def); err != nil {
+			t.Fatalf("scan partial idx: %v", err)
+		}
+		if strings.Contains(def, "WHERE (deleted_at IS NULL)") {
+			hasPartial = true
+		}
+	}
+	if !hasPartial {
+		t.Fatalf("expected partial index with WHERE (deleted_at IS NULL)")
+	}
+
+	// ignored field 'temp' not created
+	var c int
+	if err := kn.Pool().QueryRow(ctx, `SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='ignore_fields' AND column_name='temp'`).Scan(&c); err != nil {
+		t.Fatalf("inspect ignore_fields: %v", err)
+	}
+	if c != 0 {
+		t.Fatalf("expected temp column to be ignored, got count=%d", c)
+	}
+
 	// verify schema_migrations row written and idempotent
 	var cnt int
 	if err := kn.Pool().QueryRow(ctx, "select count(*) from schema_migrations").Scan(&cnt); err != nil {
@@ -157,6 +269,7 @@ func TestRepositoryCRUDAndSoftDelete(t *testing.T) {
 
 	// cleanup
 	_, _ = kn.Pool().Exec(ctx, "TRUNCATE users RESTART IDENTITY CASCADE")
+	_, _ = kn.Pool().Exec(ctx, "TRUNCATE accounts RESTART IDENTITY CASCADE")
 
 	repo := kintsnorm.NewRepository[User](kn)
 	u := &User{Email: "alice@example.com", Username: "alice", Password: "secret", IsActive: true}
@@ -274,6 +387,17 @@ func TestRepositoryCRUDAndSoftDelete(t *testing.T) {
 	// Unique violation on email
 	if err := repo.Create(ctx, &User{Email: "alice@example.com", Username: "alice3", Password: "x"}); err == nil {
 		t.Fatalf("expected unique violation on email")
+	}
+
+	// Composite unique on accounts: (tenant_id, slug)
+	if err := kn.AutoMigrate(&Account{}); err != nil {
+		t.Fatalf("migrate account: %v", err)
+	}
+	if _, err := kn.Pool().Exec(ctx, `INSERT INTO accounts(tenant_id, slug) VALUES ($1,$2)`, 1, "a"); err != nil {
+		t.Fatalf("seed account: %v", err)
+	}
+	if _, err := kn.Pool().Exec(ctx, `INSERT INTO accounts(tenant_id, slug) VALUES ($1,$2)`, 1, "a"); err == nil {
+		t.Fatalf("expected composite unique violation on accounts(tenant_id, slug)")
 	}
 
 	// Hard delete
@@ -1352,6 +1476,32 @@ func TestErrorMapping_DuplicateAndFKViolation(t *testing.T) {
 	err = kn.Query().Raw("INSERT INTO fk_posts(user_id, body) VALUES(?,?)", 99999, "y").Exec(ctx)
 	if err == nil || !errors.As(err, &ormErr) || ormErr.Code != kintsnorm.ErrCodeConstraint {
 		t.Fatalf("expected constraint code, got %#v", err)
+	}
+}
+
+func TestFKCascadeDelete(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := kn.AutoMigrate(&CascadeParent{}, &CascadeChild{}); err != nil {
+		t.Fatalf("migrate cascade: %v", err)
+	}
+	_, _ = kn.Pool().Exec(ctx, "TRUNCATE cascade_childs RESTART IDENTITY CASCADE")
+	_, _ = kn.Pool().Exec(ctx, "TRUNCATE cascade_parents RESTART IDENTITY CASCADE")
+	if _, err := kn.Pool().Exec(ctx, `INSERT INTO cascade_parents(name) VALUES ($1)`, "p1"); err != nil {
+		t.Fatalf("seed parent: %v", err)
+	}
+	if _, err := kn.Pool().Exec(ctx, `INSERT INTO cascade_childs(parent_id) VALUES ($1)`, 1); err != nil {
+		t.Fatalf("seed child: %v", err)
+	}
+	if _, err := kn.Pool().Exec(ctx, `DELETE FROM cascade_parents WHERE id=$1`, 1); err != nil {
+		t.Fatalf("delete parent: %v", err)
+	}
+	var cnt int
+	if err := kn.Pool().QueryRow(ctx, `SELECT COUNT(*) FROM cascade_childs`).Scan(&cnt); err != nil {
+		t.Fatalf("count children: %v", err)
+	}
+	if cnt != 0 {
+		t.Fatalf("expected cascade delete to remove children, got %d", cnt)
 	}
 }
 

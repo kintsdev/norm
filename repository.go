@@ -106,6 +106,11 @@ func (r *repo[T]) Create(ctx context.Context, entity *T) error {
 			if orm == "" {
 				orm = f.Tag.Get("orm")
 			}
+			// skip ignored fields
+			low := strings.ToLower(orm)
+			if strings.Contains(low, "-") || strings.Contains(low, "ignore") {
+				continue
+			}
 			fv := val.Field(i)
 			if strings.Contains(orm, "default:") && fv.IsZero() {
 				continue
@@ -566,6 +571,10 @@ func (r *repo[T]) onUpdateNowColumns(typ reflect.Type) map[string]bool {
 		orm := f.Tag.Get("norm")
 		if orm == "" {
 			orm = f.Tag.Get("orm")
+		}
+		low := strings.ToLower(orm)
+		if strings.Contains(low, "-") || strings.Contains(low, "ignore") {
+			continue
 		}
 		if orm == "" {
 			continue

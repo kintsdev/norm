@@ -743,6 +743,10 @@ func (qb *QueryBuilder) InsertStruct(ctx context.Context, entity any) (int64, er
 		if orm == "" {
 			orm = f.Tag.Get("orm")
 		}
+		low := strings.ToLower(orm)
+		if strings.Contains(low, "-") || strings.Contains(low, "ignore") {
+			continue
+		}
 		fv := v.Field(i)
 		if strings.Contains(orm, "default:") && fv.IsZero() {
 			continue

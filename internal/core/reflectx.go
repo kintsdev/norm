@@ -35,12 +35,22 @@ func StructMapper(t reflect.Type) StructMapping {
 		if col == "" {
 			col = ToSnakeCase(f.Name)
 		}
-		m.FieldsByColumn[strings.ToLower(col)] = StructFieldInfo{Index: f.Index, Name: f.Name}
 
 		// Prefer `norm` tag; fallback to legacy `orm`
 		orm := f.Tag.Get("norm")
 		if orm == "" {
 			orm = f.Tag.Get("orm")
+		}
+		// if ignored, skip mapping; else map
+		ignored := false
+		if orm != "" {
+			low := strings.ToLower(orm)
+			if strings.Contains(low, "-") || strings.Contains(low, "ignore") {
+				ignored = true
+			}
+		}
+		if !ignored {
+			m.FieldsByColumn[strings.ToLower(col)] = StructFieldInfo{Index: f.Index, Name: f.Name}
 		}
 		if orm != "" {
 			parts := strings.Split(orm, ",")

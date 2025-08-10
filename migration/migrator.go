@@ -74,13 +74,49 @@ func (m *Migrator) Plan(ctx context.Context, models ...any) (PlanResult, error) 
 		return plan, rows.Err()
 	}
 
+	// fetch existing constraints upfront to avoid re-adding
+	existingConstraints := map[string]struct{}{}
+	cinit, errc := m.pool.Query(ctx, `
+        SELECT c.conname
+        FROM pg_constraint c
+        JOIN pg_class r ON r.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = r.relnamespace
+        WHERE n.nspname = 'public' AND c.contype IN ('f','p','u')`)
+	if errc == nil {
+		defer cinit.Close()
+		for cinit.Next() {
+			var name string
+			if err := cinit.Scan(&name); err == nil {
+				existingConstraints[name] = struct{}{}
+			}
+		}
+	}
+
 	modelTables := map[string]struct{}{}
 	for _, model := range models {
 		mi := parseModel(model)
 		modelTables[mi.TableName] = struct{}{}
 		if _, ok := existing[mi.TableName]; !ok {
 			sqls := generateCreateTableSQL(mi)
-			plan.Statements = append(plan.Statements, sqls.Statements...)
+			// filter out ADD CONSTRAINT if exists already
+			filtered := make([]string, 0, len(sqls.Statements))
+			for _, s := range sqls.Statements {
+				if strings.Contains(s, "ADD CONSTRAINT") {
+					// crude extract name between ADD CONSTRAINT and next space
+					seg := s[strings.Index(s, "ADD CONSTRAINT")+len("ADD CONSTRAINT"):]
+					seg = strings.TrimSpace(seg)
+					cname := seg
+					if i := strings.Index(seg, " "); i > 0 {
+						cname = seg[:i]
+					}
+					cname = strings.Trim(cname, `"`)
+					if _, exists := existingConstraints[cname]; exists {
+						continue
+					}
+				}
+				filtered = append(filtered, s)
+			}
+			plan.Statements = append(plan.Statements, filtered...)
 			continue
 		}
 		for _, f := range mi.Fields {
@@ -123,7 +159,24 @@ func (m *Migrator) Plan(ctx context.Context, models ...any) (PlanResult, error) 
 		}
 		sqls := generateCreateTableSQL(mi)
 		if len(sqls.Statements) > 1 {
-			plan.Statements = append(plan.Statements, sqls.Statements[1:]...)
+			// filter out existing constraints
+			filtered := make([]string, 0, len(sqls.Statements)-1)
+			for _, s := range sqls.Statements[1:] {
+				if strings.Contains(s, "ADD CONSTRAINT") {
+					seg := s[strings.Index(s, "ADD CONSTRAINT")+len("ADD CONSTRAINT"):]
+					seg = strings.TrimSpace(seg)
+					cname := seg
+					if i := strings.Index(seg, " "); i > 0 {
+						cname = seg[:i]
+					}
+					cname = strings.Trim(cname, `"`)
+					if _, exists := existingConstraints[cname]; exists {
+						continue
+					}
+				}
+				filtered = append(filtered, s)
+			}
+			plan.Statements = append(plan.Statements, filtered...)
 		}
 	}
 	// destructive: drop columns that exist in DB but not in model (opt-in apply)
