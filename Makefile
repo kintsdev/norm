@@ -5,7 +5,7 @@ POSTGRES_USER ?= postgres
 POSTGRES_PASSWORD ?= postgres
 POSTGRES_DB ?= postgres
 
-.PHONY: db-up db-down db-logs db-restart test-e2e tidy bench bench-e2e
+.PHONY: db-up db-down db-logs db-restart test-e2e tidy bench bench-e2e test test-coverage
 
 db-up:
 	@echo "Starting PostgreSQL $(POSTGRES_IMAGE) on port $(POSTGRES_PORT) ..."
@@ -41,13 +41,23 @@ test-e2e:
 		go test ./e2e -v
 
 bench:
-    go test -bench=. -benchmem -run=^$ ./...
+	go test -bench=. -benchmem -run=^$ ./...
 
 bench-e2e:
-    PGHOST=127.0.0.1 PGPORT=$(POSTGRES_PORT) PGUSER=$(POSTGRES_USER) PGPASSWORD=$(POSTGRES_PASSWORD) PGDATABASE=$(POSTGRES_DB) \
-        go test -bench=. -benchmem -run=^$ ./e2e
+	PGHOST=127.0.0.1 PGPORT=$(POSTGRES_PORT) PGUSER=$(POSTGRES_USER) PGPASSWORD=$(POSTGRES_PASSWORD) PGDATABASE=$(POSTGRES_DB) \
+		go test -bench=. -benchmem -run=^$ ./e2e
 
 tidy:
 	go mod tidy
+
+test:
+	go test ./...
+
+test-coverage:
+	go test ./... -coverprofile=coverage.out -covermode=atomic
+	@echo "Checking coverage threshold..."
+	@coverage=$$(go tool cover -func=coverage.out | awk '/total:/ {print $$3}' | sed 's/%//'); \
+	threshold=25; \
+	awk -v c=$$coverage -v t=$$threshold 'BEGIN { if (c+0 < t) { printf("Coverage %.1f%% is below threshold %d%%\n", c, t); exit 1 } else { printf("Coverage OK: %.1f%% (threshold %d%%)\n", c, t); exit 0 } }'
 
 

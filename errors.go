@@ -3,6 +3,7 @@ package norm
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -54,7 +55,8 @@ func wrapPgError(err error, query string, args []any) error {
 		return nil
 	}
 	var pgErr *pgconn.PgError
-	if errors.Is(err, contextCanceledErr()) {
+	// best-effort detect context canceled without importing context
+	if strings.EqualFold(err.Error(), contextCanceledErr().Error()) {
 		return &ORMError{Code: ErrCodeTransaction, Message: err.Error(), Internal: err, Query: query, Args: args}
 	}
 	// pass through circuit breaker open error as connection error with message
