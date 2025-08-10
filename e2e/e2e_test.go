@@ -1010,6 +1010,46 @@ func TestIdentifierQuotingOnReservedColumn(t *testing.T) {
 	}
 }
 
+func TestNamedParametersInBuilderAndRaw(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, _ = kn.Pool().Exec(ctx, "TRUNCATE users RESTART IDENTITY CASCADE")
+	// seed
+	_, _ = kn.Pool().Exec(ctx, "INSERT INTO users(email, username, password) VALUES ($1,$2,$3),($4,$5,$6)",
+		"np1@example.com", "np1", "x",
+		"np2@example.com", "np2", "x",
+	)
+
+	// WhereNamed with scalar and repeated usage
+	var out []User
+	cond := "email = :email AND username <> :email" // intentionally reuse name
+	if err := kn.Query().Table("users").WhereNamed(cond, map[string]any{"email": "np1@example.com"}).Find(ctx, &out); err != nil {
+		t.Fatalf("where named: %v", err)
+	}
+	if len(out) != 1 || out[0].Username != "np1" {
+		t.Fatalf("unexpected where named: %+v", out)
+	}
+
+	// IN (...) expansion via named slice
+	out = nil
+	if err := kn.Query().Table("users").WhereNamed("username IN :names", map[string]any{"names": []string{"np1", "np2"}}).Find(ctx, &out); err != nil {
+		t.Fatalf("where named slice: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected 2 via IN slice, got %d", len(out))
+	}
+
+	// RawNamed with cast and string literal containing ':'
+	var rows []map[string]any
+	err := kn.Query().RawNamed("select (:a::int + :b::int) as s, ':literal' as l", map[string]any{"a": 2, "b": 3}).Find(ctx, &rows)
+	if err != nil {
+		t.Fatalf("raw named: %v", err)
+	}
+	if fmt.Sprint(rows[0]["s"]) != "5" || fmt.Sprint(rows[0]["l"]) != ":literal" {
+		t.Fatalf("unexpected raw named result: %+v", rows)
+	}
+}
+
 func TestIdentifierQuotingHelpersInBuilder(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

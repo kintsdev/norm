@@ -113,6 +113,19 @@ func (qb *QueryBuilder) Where(condition string, args ...any) *QueryBuilder {
 	return qb
 }
 
+// WhereNamed adds a WHERE clause with named parameters, converting :name to $n and appending args by map order
+func (qb *QueryBuilder) WhereNamed(condition string, namedArgs map[string]any) *QueryBuilder {
+	conv, ordered, err := sqlutil.ConvertNamedToPgPlaceholders(condition, namedArgs)
+	if err != nil {
+		// fall back to original for now; store as-is to surface error later at execution
+		qb.wheres = append(qb.wheres, condition)
+		return qb
+	}
+	qb.wheres = append(qb.wheres, conv)
+	qb.args = append(qb.args, ordered...)
+	return qb
+}
+
 func (qb *QueryBuilder) OrderBy(ob string) *QueryBuilder { qb.orderBy = ob; return qb }
 func (qb *QueryBuilder) Limit(n int) *QueryBuilder       { qb.limit = n; return qb }
 func (qb *QueryBuilder) Offset(n int) *QueryBuilder      { qb.offset = n; return qb }
@@ -132,6 +145,21 @@ func (qb *QueryBuilder) Before(column string, value any) *QueryBuilder {
 func (qb *QueryBuilder) Raw(sql string, args ...any) *QueryBuilder {
 	qb.raw = sqlutil.ConvertQMarksToPgPlaceholders(sql)
 	qb.args = append(qb.args, args...)
+	qb.isRaw = true
+	return qb
+}
+
+// RawNamed sets a raw SQL with :name placeholders
+func (qb *QueryBuilder) RawNamed(sql string, namedArgs map[string]any) *QueryBuilder {
+	conv, ordered, err := sqlutil.ConvertNamedToPgPlaceholders(sql, namedArgs)
+	if err != nil {
+		// store original; execution will likely fail which is acceptable for visibility
+		qb.raw = sql
+		qb.isRaw = true
+		return qb
+	}
+	qb.raw = conv
+	qb.args = append(qb.args, ordered...)
 	qb.isRaw = true
 	return qb
 }

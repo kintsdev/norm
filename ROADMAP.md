@@ -38,7 +38,7 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [x] Keyset pagination (`After/Before`)
 - [x] Struct ops: `InsertStruct`, `UpdateStructByPK`
 - [x] Identifier-quoting helpers in builder API (safe column/table refs) (e2e covered)
-- [ ] Named parameters support
+- [x] Named parameters support (`WhereNamed`, `RawNamed`) (e2e covered)
 - [ ] Prebuilt common scopes (e.g., by date ranges)
 
 ### Repository & Transactions
