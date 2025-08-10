@@ -61,6 +61,13 @@ func (kn *KintsNorm) Query() *QueryBuilder {
 	return &QueryBuilder{kn: kn, exec: exec}
 }
 
+// Model initializes a new query builder and sets its table name inferred from the provided model type.
+// Usage: kn.Model(&User{}).Where("id = ?", 1).First(ctx, &u)
+func (kn *KintsNorm) Model(model any) *QueryBuilder {
+	qb := kn.Query()
+	return qb.Model(model)
+}
+
 // QuoteIdentifier safely quotes a SQL identifier by wrapping in double quotes and escaping embedded quotes
 func QuoteIdentifier(identifier string) string {
 	// escape existing double quotes by doubling them
@@ -126,6 +133,24 @@ func (qb *QueryBuilder) UseReadPool() *QueryBuilder {
 
 func (qb *QueryBuilder) Table(name string) *QueryBuilder {
 	qb.table = name
+	return qb
+}
+
+// Model sets the table name by inferring it from a provided model type/value.
+// It follows the same convention used by the repository: snake_case(type name) + "s".
+// Examples:
+//
+//	qb.Model(&User{})
+//	qb.Model(User{})
+func (qb *QueryBuilder) Model(model any) *QueryBuilder {
+	t := reflect.TypeOf(model)
+	if t == nil {
+		return qb
+	}
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	qb.table = core.ToSnakeCase(t.Name()) + "s"
 	return qb
 }
 

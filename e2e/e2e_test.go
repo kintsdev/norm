@@ -663,6 +663,80 @@ func TestQueryBuilderFirstLastAndDelete(t *testing.T) {
 	}
 }
 
+func TestModelChainSelectFirstLastAndCRUD(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, _ = kn.Pool().Exec(ctx, "TRUNCATE users RESTART IDENTITY CASCADE")
+
+	// seed 3 users
+	_, _ = kn.Pool().Exec(ctx, "INSERT INTO users(email, username, password) VALUES ($1,$2,$3),($4,$5,$6),($7,$8,$9)",
+		"m1@example.com", "m1", "x",
+		"m2@example.com", "m2", "x",
+		"m3@example.com", "m3", "x",
+	)
+
+	// First via KintsNorm.Model
+	var first User
+	if err := kn.Model(&User{}).OrderBy("id ASC").First(ctx, &first); err != nil {
+		t.Fatalf("model first: %v", err)
+	}
+	if first.Username != "m1" {
+		t.Fatalf("unexpected first via Model: %+v", first)
+	}
+
+	// Last via Query().Model
+	var last User
+	if err := kn.Query().Model(User{}).OrderBy("id ASC").Last(ctx, &last); err != nil {
+		t.Fatalf("model last: %v", err)
+	}
+	if last.Username != "m3" {
+		t.Fatalf("unexpected last via Model: %+v", last)
+	}
+
+	// Find with filter via Model
+	var out []User
+	if err := kn.Model(&User{}).Where("email = ?", "m2@example.com").Find(ctx, &out); err != nil {
+		t.Fatalf("model find: %v", err)
+	}
+	if len(out) != 1 || out[0].Username != "m2" {
+		t.Fatalf("unexpected model find: %+v", out)
+	}
+
+	// Insert using Model + Returning
+	var ret []map[string]any
+	aff, err := kn.Model(User{}).Insert("email", "username", "password").Values("mr@example.com", "mr", "x").Returning("id", "email").ExecInsert(ctx, &ret)
+	if err != nil || aff != 1 {
+		t.Fatalf("model insert returning: aff=%d err=%v", aff, err)
+	}
+	if len(ret) != 1 || ret[0]["email"] != "mr@example.com" {
+		t.Fatalf("unexpected model insert ret: %+v", ret)
+	}
+
+	// Update using Model + Returning
+	ret = nil
+	aff2, err := kn.Query().Model(&User{}).Set("password = ?", "y").Where("email = ?", "mr@example.com").Returning("id", "password").ExecUpdate(ctx, &ret)
+	if err != nil || aff2 != 1 {
+		t.Fatalf("model update returning: aff=%d err=%v", aff2, err)
+	}
+	if len(ret) != 1 {
+		t.Fatalf("model update returning rows: %+v", ret)
+	}
+
+	// Soft delete via Model
+	delAff, err := kn.Model(User{}).Where("username = ?", "m2").Delete(ctx)
+	if err != nil || delAff != 1 {
+		t.Fatalf("model soft delete: aff=%d err=%v", delAff, err)
+	}
+	// verify deleted_at set
+	var deletedAt *time.Time
+	if err := kn.Pool().QueryRow(ctx, "select deleted_at from users where username=$1", "m2").Scan(&deletedAt); err != nil {
+		t.Fatalf("check deleted_at after model delete: %v", err)
+	}
+	if deletedAt == nil {
+		t.Fatalf("expected deleted_at set after model soft delete")
+	}
+}
+
 func TestInsertReturningUpsertAndUpdateReturning(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
