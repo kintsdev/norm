@@ -39,7 +39,7 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [x] Struct ops: `InsertStruct`, `UpdateStructByPK`
 - [x] Identifier-quoting helpers in builder API (safe column/table refs) (e2e covered)
 - [x] Named parameters support (`WhereNamed`, `RawNamed`) (e2e covered)
-- [ ] Prebuilt common scopes (e.g., by date ranges)
+- [x] Prebuilt common scopes (e.g., by date ranges) (e2e covered)
 
 ### Repository & Transactions
 

@@ -637,6 +637,43 @@ func TestRepositoryFindPageWithOrderingAndScopes(t *testing.T) {
 	}
 }
 
+func TestCommonScopesDateRangeAndOnDate(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, _ = kn.Pool().Exec(ctx, "TRUNCATE users RESTART IDENTITY CASCADE")
+	repo := kintsnorm.NewRepository[User](kn)
+
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	// create users with spaced created_at using raw insert to control timestamps
+	for i := 0; i < 5; i++ {
+		ts := base.Add(time.Duration(i) * 24 * time.Hour)
+		// id and created_at explicit
+		if _, err := kn.Pool().Exec(ctx, `INSERT INTO users(id, email, username, password, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$5)`, int64(i+1), fmt.Sprintf("d%02d@example.com", i), fmt.Sprintf("d%02d", i), "x", ts); err != nil {
+			t.Fatalf("seed dated user %d: %v", i, err)
+		}
+	}
+
+	// DateRange: include day 2..4
+	cond := kintsnorm.DateRange("created_at", base.Add(24*time.Hour), base.Add(4*24*time.Hour))
+	items, err := repo.Find(ctx, cond)
+	if err != nil {
+		t.Fatalf("date range find: %v", err)
+	}
+	if len(items) != 4 { // days 1,2,3,4 (since inclusive)
+		t.Fatalf("expected 4 items in range, got %d", len(items))
+	}
+
+	// OnDate: exactly third day
+	cond2 := kintsnorm.OnDate("created_at", base.Add(2*24*time.Hour))
+	items2, err := repo.Find(ctx, cond2)
+	if err != nil {
+		t.Fatalf("on date find: %v", err)
+	}
+	if len(items2) != 1 || items2[0].Username != "d02" {
+		t.Fatalf("expected one item for specific day, got %+v", items2)
+	}
+}
+
 func TestPaginationOrderingAndOffsetEdge(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

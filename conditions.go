@@ -1,6 +1,9 @@
 package norm
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 type Condition struct {
 	Expr string
@@ -28,6 +31,24 @@ func In(col string, vals []any) Condition {
 }
 
 func RawCond(expr string, args ...any) Condition { return Condition{Expr: expr, Args: args} }
+
+// Between builds a generic BETWEEN condition inclusive of both ends
+func Between(col string, start any, end any) Condition {
+	return Condition{Expr: col + " BETWEEN ? AND ?", Args: []any{start, end}}
+}
+
+// DateRange returns a timestamp range condition inclusive of boundaries
+func DateRange(col string, from, to time.Time) Condition {
+	return Condition{Expr: col + " BETWEEN ? AND ?", Args: []any{from, to}}
+}
+
+// OnDate matches rows where timestamp column falls on the given calendar day (UTC-based start/end)
+func OnDate(col string, day time.Time) Condition {
+	d := day.UTC()
+	start := time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	return Condition{Expr: col + " >= ? AND " + col + " < ?", Args: []any{start, end}}
+}
 
 func And(conds ...Condition) Condition {
 	if len(conds) == 0 {
