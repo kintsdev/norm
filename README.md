@@ -3,6 +3,7 @@
 Production-ready, PGX v5 tabanlı hafif ORM ve query builder (PostgreSQL). Bağlantı havuzu, otomatik migration, fluent query builder, generic repository, soft delete, optimistic locking, transaction yönetimi, read/write splitting, retry/backoff, ve kapsamlı e2e testleri ile gelir.
 
 ### Özellikler
+
 - PGX v5 (`pgxpool`) ile hızlı ve güvenilir bağlantı yönetimi
 - Config ile esnek ayarlar: pool sınırları, timeouts, statement cache, app name vb.
 - Otomatik migration: struct tag’lerden tablo/kolon/index/FK üretimi, idempotent plan, transactional apply, rename diff, type/nullability uyarıları
@@ -13,7 +14,7 @@ Production-ready, PGX v5 tabanlı hafif ORM ve query builder (PostgreSQL). Bağl
 - Transaction yönetimi: `TxManager`, transaction-bound QueryBuilder
 - Read/Write splitting: read pool opsiyonel, fallback
 - Retry: exponential backoff
- - Circuit Breaker: optional open/half-open/closed with metrics hooks
+- Circuit Breaker: optional open/half-open/closed with metrics hooks
 
 Not: OpenTelemetry/Prometheus entegrasyonları şimdilik kapsam dışıdır.
 
@@ -68,6 +69,7 @@ func main() {
 ```
 
 ### Struct Tag’leri (özet)
+
 - `db:"column_name"` kolon adını belirler; boşsa snake_case kullanılır
 - `orm:"primary_key"`, `auto_increment`, `unique`, `not_null`, `default:now()`, `index`, `on_update:now()`, `version`
 - `orm:"fk:other_table(other_id)"` yabancı anahtar
@@ -75,6 +77,7 @@ func main() {
 - Tip override: `varchar(50)`, `text`, `timestamptz`, vb.
 
 ### Migration
+
 - Plan/preview: mevcut şemayı `information_schema` üzerinden okuyup güvenli plan üretir
 - `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, index/FK oluşturma
 - Rename’ler için güvenli `ALTER TABLE ... RENAME COLUMN ...`
@@ -85,17 +88,20 @@ func main() {
 Yakında: manuel (dosya tabanlı) Up/Down migrasyonları, rollback desteği, drop/rename table için guard’lar.
 
 ### Read/Write Splitting ve Retry
+
 - `Config.ReadOnlyConnString` verilirse read pool açılır; `Query()` otomatik olarak read sorgularını read pool’a yönlendirir, yazmalar primary’de çalışır
 - Override: `UsePrimary()` ile okuma sorgusunu primary’e yönlendirebilirsiniz; `UseReadPool()` manuel read pool kullanımı sağlar
 - Retry: `RetryAttempts` ve `RetryBackoff` (exponential + jitter)
 - Circuit Breaker: `CircuitBreakerEnabled`, `CircuitFailureThreshold`, `CircuitOpenTimeout`, `CircuitHalfOpenMaxCalls`
 
 ### Opsiyonel Cache Hookları
+
 - `WithCache(cache)` ile opsiyonel cache sağlayın (örn. Redis adaptörü)
 - Okuma: `Query().WithCacheKey(key, ttl).Find/First` read-through cache (minimal hook)
 - Yazma: `WithInvalidateKeys(keys...)` ile insert/update/delete/exec sonrası invalidation çağrısı
 
 ### Testler
+
 - `Makefile` ile Postgres 17.5 docker ve kapsamlı e2e testleri
 - Testler CRUD, soft delete, transaction, query builder, pagination, DSL, struct ops, migration diff/quoting’i kapsar
 
@@ -108,9 +114,9 @@ make db-down
 ```
 
 ### Yol Haritası
+
 Detaylı plan için `ROADMAP.md` dosyasına bakın.
 
 ### Lisans
+
 MIT
-
-

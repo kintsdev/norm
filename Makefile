@@ -54,10 +54,10 @@ test:
 	go test ./...
 
 test-coverage:
-	go test ./... -coverprofile=coverage.out -covermode=atomic
+	go test -coverpkg=./... ./... -coverprofile=coverage.out -covermode=atomic
 	@echo "Checking coverage threshold..."
 	@coverage=$$(go tool cover -func=coverage.out | awk '/total:/ {print $$3}' | sed 's/%//'); \
-	threshold=25; \
+	threshold=80; \
 	awk -v c=$$coverage -v t=$$threshold 'BEGIN { if (c+0 < t) { printf("Coverage %.1f%% is below threshold %d%%\n", c, t); exit 1 } else { printf("Coverage OK: %.1f%% (threshold %d%%)\n", c, t); exit 0 } }'
 
 

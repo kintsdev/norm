@@ -34,6 +34,10 @@ func TestInAndAndOr(t *testing.T) {
 	if c3.Expr != "1=0" {
 		t.Fatalf("Or empty")
 	}
+	c5 := Or(Eq("x", 1), Ne("y", 2))
+	if c5.Expr != "(x = ?) OR (y <> ?)" || len(c5.Args) != 2 {
+		t.Fatalf("Or with args")
+	}
 	c4 := And()
 	if c4.Expr != "1=1" {
 		t.Fatalf("And empty")
