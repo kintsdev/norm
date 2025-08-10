@@ -35,6 +35,7 @@ func (e *ORMError) Error() string { return e.Message }
 
 func mapPgErrorCode(pgCode string) ErrorCode {
 	switch pgCode {
+	// duplicate / constraint family
 	case "23505": // unique_violation
 		return ErrCodeDuplicate
 	case "23503": // foreign_key_violation
@@ -43,8 +44,36 @@ func mapPgErrorCode(pgCode string) ErrorCode {
 		return ErrCodeConstraint
 	case "23502": // not_null_violation
 		return ErrCodeConstraint
+	case "23513": // exclusion_violation
+		return ErrCodeConstraint
+	// transaction / concurrency
 	case "40001": // serialization_failure
 		return ErrCodeTransaction
+	case "40P01": // deadlock_detected
+		return ErrCodeTransaction
+	case "55P03": // lock_not_available
+		return ErrCodeTransaction
+	case "57014": // query_canceled
+		return ErrCodeTransaction
+	// connection related
+	case "08000", // connection_exception
+		"08001", // sqlclient_unable_to_establish_sqlconnection
+		"08003", // connection_does_not_exist
+		"08004", // sqlserver_rejected_establishment_of_sqlconnection
+		"08006", // connection_failure
+		"57P01", // admin_shutdown
+		"57P02", // crash_shutdown
+		"57P03", // cannot_connect_now
+		"53300": // too_many_connections
+		return ErrCodeConnection
+	// validation / syntax / undefined objects / cast issues
+	case "42601", // syntax_error
+		"42883", // undefined_function
+		"42703", // undefined_column
+		"42P01", // undefined_table
+		"22P02", // invalid_text_representation
+		"22001": // string_data_right_truncation
+		return ErrCodeValidation
 	default:
 		return ErrCodeValidation
 	}
@@ -53,6 +82,11 @@ func mapPgErrorCode(pgCode string) ErrorCode {
 func wrapPgError(err error, query string, args []any) error {
 	if err == nil {
 		return nil
+	}
+	// If already wrapped, return as-is
+	var oe *ORMError
+	if errors.As(err, &oe) {
+		return err
 	}
 	var pgErr *pgconn.PgError
 	// best-effort detect context canceled without importing context

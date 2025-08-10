@@ -138,7 +138,10 @@ func defaultIfZeroDuration(v, def time.Duration) time.Duration {
 
 // AutoMigrate runs schema migrations for given models
 func (kn *KintsNorm) AutoMigrate(models ...any) error {
-	return kn.migrator.AutoMigrate(context.Background(), models...)
+	if err := kn.migrator.AutoMigrate(context.Background(), models...); err != nil {
+		return &ORMError{Code: ErrCodeMigration, Message: err.Error(), Internal: err}
+	}
+	return nil
 }
 
 // AutoMigrateWithOptions allows enabling destructive ops (e.g., drop columns)
@@ -146,7 +149,10 @@ func (kn *KintsNorm) AutoMigrateWithOptions(ctx context.Context, opts migration.
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return kn.migrator.AutoMigrateWithOptions(ctx, opts, models...)
+	if err := kn.migrator.AutoMigrateWithOptions(ctx, opts, models...); err != nil {
+		return &ORMError{Code: ErrCodeMigration, Message: err.Error(), Internal: err}
+	}
+	return nil
 }
 
 // MigrateUpDir applies pending .up.sql migrations from a directory
@@ -154,7 +160,10 @@ func (kn *KintsNorm) MigrateUpDir(ctx context.Context, dir string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return kn.migrator.MigrateUpDir(ctx, dir)
+	if err := kn.migrator.MigrateUpDir(ctx, dir); err != nil {
+		return &ORMError{Code: ErrCodeMigration, Message: err.Error(), Internal: err}
+	}
+	return nil
 }
 
 // MigrateDownDir rolls back the last N migrations using .down.sql files
@@ -162,7 +171,10 @@ func (kn *KintsNorm) MigrateDownDir(ctx context.Context, dir string, steps int) 
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return kn.migrator.MigrateDownDir(ctx, dir, steps)
+	if err := kn.migrator.MigrateDownDir(ctx, dir, steps); err != nil {
+		return &ORMError{Code: ErrCodeMigration, Message: err.Error(), Internal: err}
+	}
+	return nil
 }
 
 // SetManualMigrationOptions configures safety gates for manual file-based migrations

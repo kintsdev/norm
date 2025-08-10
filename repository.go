@@ -128,7 +128,10 @@ func (r *repo[T]) Create(ctx context.Context, entity *T) error {
 		}
 		query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", r.tableName(), strings.Join(cols, ", "), strings.Join(placeholders, ", "))
 		_, err := r.exec.Exec(ctx, query, args...)
-		return err
+		if err != nil {
+			return wrapPgError(err, query, args)
+		}
+		return nil
 	}
 	if r.kn != nil {
 		if err := r.kn.withRetry(ctx, execFn); err != nil {
@@ -239,7 +242,7 @@ func (r *repo[T]) Update(ctx context.Context, entity *T) error {
 		query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = $%d AND %s = $%d", r.tableName(), strings.Join(sets, ", "), mapper.PrimaryColumn, idx, mapper.VersionColumn, idx+1)
 		tag, err := r.exec.Exec(ctx, query, args...)
 		if err != nil {
-			return err
+			return wrapPgError(err, query, args)
 		}
 		if tag.RowsAffected() == 0 {
 			return &ORMError{Code: ErrCodeTransaction, Message: "optimistic lock conflict"}
@@ -250,7 +253,7 @@ func (r *repo[T]) Update(ctx context.Context, entity *T) error {
 	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = $%d", r.tableName(), strings.Join(sets, ", "), mapper.PrimaryColumn, idx)
 	_, err := r.exec.Exec(ctx, query, args...)
 	if err != nil {
-		return err
+		return wrapPgError(err, query, args)
 	}
 	// model hook: AfterUpdate
 	if au, ok := any(entity).(AfterUpdate); ok {
@@ -373,7 +376,7 @@ func (r *repo[T]) SoftDeleteAll(ctx context.Context) (int64, error) {
 	query := fmt.Sprintf("UPDATE %s SET deleted_at = NOW() WHERE deleted_at IS NULL", r.tableName())
 	tag, err := r.exec.Exec(ctx, query)
 	if err != nil {
-		return 0, err
+		return 0, wrapPgError(err, query, nil)
 	}
 	return int64(tag.RowsAffected()), nil
 }
@@ -395,7 +398,7 @@ func (r *repo[T]) Restore(ctx context.Context, id any) error {
 	query := fmt.Sprintf("UPDATE %s SET deleted_at = NULL WHERE id = $1", r.tableName())
 	_, err := r.exec.Exec(ctx, query, id)
 	if err != nil {
-		return err
+		return wrapPgError(err, query, []any{id})
 	}
 	if ar, ok := any(&t).(AfterRestore); ok {
 		if err := ar.AfterRestore(ctx, id); err != nil {
@@ -426,7 +429,7 @@ func (r *repo[T]) PurgeTrashed(ctx context.Context) (int64, error) {
 	query := fmt.Sprintf("DELETE FROM %s WHERE deleted_at IS NOT NULL", r.tableName())
 	tag, err := r.exec.Exec(ctx, query)
 	if err != nil {
-		return 0, err
+		return 0, wrapPgError(err, query, nil)
 	}
 	affected := int64(tag.RowsAffected())
 	if ap, ok := any(&t).(AfterPurgeTrashed); ok {
@@ -617,7 +620,7 @@ func (r *repo[T]) CreateCopyFrom(ctx context.Context, entities []*T, columns ...
 	src := pgxv5.CopyFromRows(rows)
 	n, err := conn.CopyFrom(ctx, pgxv5.Identifier{r.tableName()}, columns, src)
 	if err != nil {
-		return 0, err
+		return 0, wrapPgError(err, fmt.Sprintf("COPY %s (...)", r.tableName()), nil)
 	}
 	return n, nil
 }
@@ -677,7 +680,7 @@ func (r *repo[T]) Upsert(ctx context.Context, entity *T, conflictCols []string, 
 	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO UPDATE SET %s", r.tableName(), strings.Join(cols, ", "), strings.Join(placeholders, ", "), strings.Join(conflictCols, ", "), strings.Join(setParts, ", "))
 	_, err := r.exec.Exec(ctx, query, args...)
 	if err != nil {
-		return err
+		return wrapPgError(err, query, args)
 	}
 	// model hook: AfterUpsert
 	if au, ok := any(entity).(AfterUpsert); ok {

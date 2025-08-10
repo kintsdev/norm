@@ -304,7 +304,8 @@ func (qb *QueryBuilder) Unscoped() *QueryBuilder { return qb.WithTrashed() }
 
 func (qb *QueryBuilder) buildSelect() (string, []any) {
 	if qb.isRaw {
-		return qb.raw, qb.args
+		// Add explicit type casts to placeholders based on Go arg types to help Postgres infer types in raw queries
+		return addTypeCastsToPlaceholders(qb.raw, qb.args), qb.args
 	}
 	cols := "*"
 	if len(qb.columns) > 0 {
@@ -359,6 +360,74 @@ func (qb *QueryBuilder) buildSelect() (string, []any) {
 		sb.WriteString(fmt.Sprintf(" OFFSET %d", qb.offset))
 	}
 	return sb.String(), qb.args
+}
+
+// addTypeCastsToPlaceholders appends ::PGTYPE to $n placeholders based on arg types when not already cast
+func addTypeCastsToPlaceholders(sql string, args []any) string {
+	out := sql
+	// Replace from highest index to lowest to avoid prefix collisions ($10 vs $1)
+	for i := len(args); i >= 1; i-- {
+		ph := fmt.Sprintf("$%d", i)
+		// scan and cast only if not already followed by '::'
+		for {
+			idx := strings.Index(out, ph)
+			if idx < 0 {
+				break
+			}
+			// already cast?
+			if idx+len(ph) < len(out) && strings.HasPrefix(out[idx+len(ph):], "::") {
+				// move past this occurrence
+				out = out[:idx+len(ph)] + "" + out[idx+len(ph):]
+				// skip replacement
+				// advance search after this position
+				// Append a sentinel to avoid infinite loop; shift one char
+				nextStart := idx + len(ph)
+				rest := out[nextStart:]
+				// find next occurrence in rest
+				nidx := strings.Index(rest, ph)
+				if nidx < 0 {
+					break
+				}
+				// reconstruct to continue scan from after next occurrence
+				out = out[:nextStart] + rest
+				continue
+			}
+			// determine pg type
+			pgType := pgTypeForArg(args[i-1])
+			// replace this single occurrence by inserting ::type
+			out = out[:idx] + ph + "::" + pgType + out[idx+len(ph):]
+			// continue search after this inserted cast
+		}
+	}
+	return out
+}
+
+func pgTypeForArg(a any) string {
+	switch v := a.(type) {
+	case int8, int16, int32:
+		return "INTEGER"
+	case int, int64:
+		return "BIGINT"
+	case uint8, uint16, uint32:
+		return "INTEGER"
+	case uint, uint64:
+		return "BIGINT"
+	case float32:
+		return "REAL"
+	case float64:
+		return "DOUBLE PRECISION"
+	case bool:
+		return "BOOLEAN"
+	case time.Time:
+		return "TIMESTAMPTZ"
+	case []byte:
+		return "BYTEA"
+	case string:
+		return "TEXT"
+	default:
+		_ = v
+		return "TEXT"
+	}
 }
 
 // Find runs the query and scans into dest (slice pointer)
@@ -597,7 +666,7 @@ func (qb *QueryBuilder) Delete(ctx context.Context) (int64, error) {
 				qb.kn.logger.Error("exec_error", fields...)
 			}
 		}
-		return 0, err
+		return 0, wrapPgError(err, query, args)
 	}
 	if qb.kn.cache != nil && len(qb.invalidate) > 0 {
 		_ = qb.kn.cache.Invalidate(ctx, qb.invalidate...)
