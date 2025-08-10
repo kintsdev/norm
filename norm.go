@@ -118,6 +118,11 @@ func (kn *KintsNorm) MigrateDownDir(ctx context.Context, dir string, steps int) 
 	return kn.migrator.MigrateDownDir(ctx, dir, steps)
 }
 
+// SetManualMigrationOptions configures safety gates for manual file-based migrations
+func (kn *KintsNorm) SetManualMigrationOptions(opts migration.ManualOptions) {
+	kn.migrator.SetManualOptions(opts)
+}
+
 // Close gracefully closes the connection pool
 func (kn *KintsNorm) Close() error {
 	if kn.pool != nil {

@@ -1091,9 +1091,14 @@ func TestManualMigrationsUpDown(t *testing.T) {
 		t.Fatalf("expected at least +2 migration rows, before=%d after=%d", before, afterUp)
 	}
 
-	// down one step -> drop age column
+	// safety: default blocks DROP COLUMN/TABLE
+	if err := kn.MigrateDownDir(ctx, dir, 1); err == nil {
+		t.Fatalf("expected safety gate to block DROP COLUMN by default")
+	}
+	// allow column drop and try again
+	kn.SetManualMigrationOptions(migration.ManualOptions{AllowColumnDrop: true})
 	if err := kn.MigrateDownDir(ctx, dir, 1); err != nil {
-		t.Fatalf("migrate down 1 failed: %v", err)
+		t.Fatalf("migrate down 1 failed with AllowColumnDrop: %v", err)
 	}
 	if err := kn.Pool().QueryRow(ctx, `SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='manual_e2e' AND column_name='age'`).Scan(&c); err != nil {
 		t.Fatalf("check age after down: %v", err)
@@ -1102,9 +1107,13 @@ func TestManualMigrationsUpDown(t *testing.T) {
 		t.Fatalf("expected age column dropped, got %d", c)
 	}
 
-	// down second step -> drop table
+	// down second step -> drop table, but blocked until allowed
+	if err := kn.MigrateDownDir(ctx, dir, 1); err == nil {
+		t.Fatalf("expected safety gate to block DROP TABLE by default")
+	}
+	kn.SetManualMigrationOptions(migration.ManualOptions{AllowTableDrop: true, AllowColumnDrop: true})
 	if err := kn.MigrateDownDir(ctx, dir, 1); err != nil {
-		t.Fatalf("migrate down 2 failed: %v", err)
+		t.Fatalf("migrate down 2 failed with AllowTableDrop: %v", err)
 	}
 	if err := kn.Pool().QueryRow(ctx, `select to_regclass('public.manual_e2e')`).Scan(&reg); err != nil {
 		t.Fatalf("regclass after full down: %v", err)

@@ -22,7 +22,7 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [x] Type and nullability change warnings + unsafe statements
 - [x] Manual migrations: file-based SQL (Up/Down)
 - [ ] Go-based migration helpers (functions)
-- [ ] Rollback: down-runner with safety gates
+- [x] Rollback: down-runner with safety gates
 - [ ] Drop/rename table/column plan with explicit opt-in guards
 - [ ] Index/constraint change and drop diffing
 - [ ] Detailed plan formatting (grouping by table, severity)

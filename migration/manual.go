@@ -129,6 +129,14 @@ func (m *Migrator) MigrateDownDir(ctx context.Context, dir string, steps int) er
 			return fmt.Errorf("missing down sql for version %d", v)
 		}
 		for _, stmt := range splitSQLStatements(p.downSQL) {
+			// safety gates: block table/column drops unless allowed
+			low := strings.ToLower(strings.TrimSpace(stmt))
+			if strings.HasPrefix(low, "drop table ") && !m.manualOpts.AllowTableDrop {
+				return fmt.Errorf("DROP TABLE blocked by safety gate: %s", stmt)
+			}
+			if strings.Contains(low, " drop column ") && !m.manualOpts.AllowColumnDrop {
+				return fmt.Errorf("DROP COLUMN blocked by safety gate: %s", stmt)
+			}
 			if _, err := tx.Exec(ctx, stmt); err != nil {
 				return fmt.Errorf("apply down %d failed: %w", v, err)
 			}

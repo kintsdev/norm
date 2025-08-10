@@ -13,9 +13,20 @@ import (
 // Migrator handles migrations and schema management
 type Migrator struct {
 	pool *pgxpool.Pool
+	// manual migration safety options
+	manualOpts ManualOptions
 }
 
 func NewMigrator(pool *pgxpool.Pool) *Migrator { return &Migrator{pool: pool} }
+
+// ManualOptions controls safety gates for manual file-based migrations
+type ManualOptions struct {
+	AllowTableDrop  bool // allow DROP TABLE in down migrations
+	AllowColumnDrop bool // allow ALTER TABLE ... DROP COLUMN in down migrations
+}
+
+// SetManualOptions sets safety options for manual migrations
+func (m *Migrator) SetManualOptions(opts ManualOptions) { m.manualOpts = opts }
 
 // PlanResult is a preview of migration operations
 type PlanResult struct {
