@@ -211,13 +211,18 @@ func TestRepositoryCRUDAndSoftDelete(t *testing.T) {
 	if err := repo.Create(ctx, soft); err != nil {
 		t.Fatalf("create soft: %v", err)
 	}
-	if err := repo.SoftDelete(ctx, soft.ID); err != nil {
+	// fetch created row to get generated ID (Create does not RETURNING id)
+	softRow, err := repo.FindOne(ctx, kintsnorm.Condition{Expr: "email = ?", Args: []any{"soft@example.com"}})
+	if err != nil {
+		t.Fatalf("find soft: %v", err)
+	}
+	if err := repo.SoftDelete(ctx, softRow.ID); err != nil {
 		t.Fatalf("soft delete: %v", err)
 	}
 
 	// DeletedAt should be set; verify
 	var deletedAt *time.Time
-	if err := kn.Pool().QueryRow(ctx, "select deleted_at from users where id = $1", got.ID).Scan(&deletedAt); err != nil {
+	if err := kn.Pool().QueryRow(ctx, "select deleted_at from users where id = $1", softRow.ID).Scan(&deletedAt); err != nil {
 		t.Fatalf("query deleted_at: %v", err)
 	}
 	if deletedAt == nil {
@@ -225,12 +230,12 @@ func TestRepositoryCRUDAndSoftDelete(t *testing.T) {
 	}
 
 	// Default Find should not return soft-deleted rows
-	if ex, err := repo.Exists(ctx, kintsnorm.Condition{Expr: "id = ?", Args: []any{got.ID}}); err != nil {
+	if ex, err := repo.Exists(ctx, kintsnorm.Condition{Expr: "id = ?", Args: []any{softRow.ID}}); err != nil {
 		t.Fatalf("exists error: %v", err)
 	} else if ex {
 		t.Fatalf("soft-deleted row should be hidden in Exists/Count")
 	}
-	if _, err := repo.FindOne(ctx, kintsnorm.Condition{Expr: "id = ?", Args: []any{got.ID}}); err == nil {
+	if _, err := repo.FindOne(ctx, kintsnorm.Condition{Expr: "id = ?", Args: []any{softRow.ID}}); err == nil {
 		t.Fatalf("soft-deleted row should not be returned by FindOne")
 	}
 
