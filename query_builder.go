@@ -138,6 +138,35 @@ func (qb *QueryBuilder) Join(table, on string) *QueryBuilder {
 	return qb
 }
 
+// InnerJoin appends an INNER JOIN clause (alias of Join)
+func (qb *QueryBuilder) InnerJoin(table, on string) *QueryBuilder {
+	return qb.Join(table, on)
+}
+
+// LeftJoin appends a LEFT JOIN clause
+func (qb *QueryBuilder) LeftJoin(table, on string) *QueryBuilder {
+	qb.joins = append(qb.joins, fmt.Sprintf("LEFT JOIN %s ON %s", table, on))
+	return qb
+}
+
+// RightJoin appends a RIGHT JOIN clause
+func (qb *QueryBuilder) RightJoin(table, on string) *QueryBuilder {
+	qb.joins = append(qb.joins, fmt.Sprintf("RIGHT JOIN %s ON %s", table, on))
+	return qb
+}
+
+// FullJoin appends a FULL JOIN clause
+func (qb *QueryBuilder) FullJoin(table, on string) *QueryBuilder {
+	qb.joins = append(qb.joins, fmt.Sprintf("FULL JOIN %s ON %s", table, on))
+	return qb
+}
+
+// CrossJoin appends a CROSS JOIN clause (no ON condition)
+func (qb *QueryBuilder) CrossJoin(table string) *QueryBuilder {
+	qb.joins = append(qb.joins, fmt.Sprintf("CROSS JOIN %s", table))
+	return qb
+}
+
 func (qb *QueryBuilder) Where(condition string, args ...any) *QueryBuilder {
 	qb.wheres = append(qb.wheres, condition)
 	qb.args = append(qb.args, args...)

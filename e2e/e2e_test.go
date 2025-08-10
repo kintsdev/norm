@@ -413,13 +413,58 @@ func TestQueryBuilderJoinsPaginationRawAndTimeout(t *testing.T) {
 		t.Fatalf("insert profile: %v", err)
 	}
 
-	// join query
+	// join query (INNER)
 	var joined []map[string]any
 	if err := kn.Query().Table("users u").Join("profiles p", "u.id = p.user_id").Select("u.id", "p.bio").Find(ctx, &joined); err != nil {
 		t.Fatalf("join find: %v", err)
 	}
 	if len(joined) != 1 || fmt.Sprint(joined[0]["bio"]) != "bio-1" {
 		t.Fatalf("unexpected join result: %+v", joined)
+	}
+
+	// explicit InnerJoin alias
+	joined = nil
+	if err := kn.Query().Table("users u").InnerJoin("profiles p", "u.id = p.user_id").Select("u.id", "p.bio").Find(ctx, &joined); err != nil {
+		t.Fatalf("inner join find: %v", err)
+	}
+	if len(joined) != 1 {
+		t.Fatalf("expected 1 row for inner join, got %d", len(joined))
+	}
+
+	// LEFT JOIN returns all users with possible NULL bio
+	var leftRows []map[string]any
+	if err := kn.Query().Table("users u").LeftJoin("profiles p", "u.id = p.user_id").Select("u.id", "p.bio").Find(ctx, &leftRows); err != nil {
+		t.Fatalf("left join find: %v", err)
+	}
+	if len(leftRows) != 15 {
+		t.Fatalf("expected 15 rows for left join (all users), got %d", len(leftRows))
+	}
+
+	// RIGHT JOIN returns all profiles (only one exists)
+	var rightRows []map[string]any
+	if err := kn.Query().Table("users u").RightJoin("profiles p", "u.id = p.user_id").Select("u.id", "p.bio").Find(ctx, &rightRows); err != nil {
+		t.Fatalf("right join find: %v", err)
+	}
+	if len(rightRows) != 1 {
+		t.Fatalf("expected 1 row for right join (all profiles), got %d", len(rightRows))
+	}
+
+	// FULL JOIN returns all users plus unmatched profiles (none extra here) => 15
+	var fullRows []map[string]any
+	if err := kn.Query().Table("users u").FullJoin("profiles p", "u.id = p.user_id").Select("u.id", "p.bio").Find(ctx, &fullRows); err != nil {
+		t.Fatalf("full join find: %v", err)
+	}
+	if len(fullRows) != 15 {
+		t.Fatalf("expected 15 rows for full join, got %d", len(fullRows))
+	}
+
+	// CROSS JOIN with a constant subquery keeps cardinality (users x 1) => 15
+	var crossRows []map[string]any
+	if err := kn.Query().Table("users u").CrossJoin("(SELECT 1) x").Select("u.id").Find(ctx, &crossRows); err != nil {
+		t.Fatalf("cross join find: %v", err)
+	}
+	if len(crossRows) != 15 {
+		t.Fatalf("expected 15 rows for cross join with const, got %d", len(crossRows))
 	}
 
 	// Raw with placeholders and multiple clauses
