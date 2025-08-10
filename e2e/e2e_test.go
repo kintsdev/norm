@@ -206,7 +206,12 @@ func TestRepositoryCRUDAndSoftDelete(t *testing.T) {
 	}
 
 	// Soft delete hides rows from default queries
-	if err := repo.SoftDelete(ctx, got.ID); err != nil {
+	// first create user name with soft delete
+	soft := &User{Email: "soft@example.com", Username: "soft", Password: "x", IsActive: true}
+	if err := repo.Create(ctx, soft); err != nil {
+		t.Fatalf("create soft: %v", err)
+	}
+	if err := repo.SoftDelete(ctx, soft.ID); err != nil {
 		t.Fatalf("soft delete: %v", err)
 	}
 

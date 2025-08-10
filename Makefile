@@ -5,7 +5,7 @@ POSTGRES_USER ?= postgres
 POSTGRES_PASSWORD ?= postgres
 POSTGRES_DB ?= postgres
 
-.PHONY: db-up db-down db-logs db-restart test-e2e tidy
+.PHONY: db-up db-down db-logs db-restart test-e2e tidy bench bench-e2e
 
 db-up:
 	@echo "Starting PostgreSQL $(POSTGRES_IMAGE) on port $(POSTGRES_PORT) ..."
@@ -39,6 +39,13 @@ db-restart: db-down db-up
 test-e2e:
 	PGHOST=127.0.0.1 PGPORT=$(POSTGRES_PORT) PGUSER=$(POSTGRES_USER) PGPASSWORD=$(POSTGRES_PASSWORD) PGDATABASE=$(POSTGRES_DB) \
 		go test ./e2e -v
+
+bench:
+    go test -bench=. -benchmem -run=^$ ./...
+
+bench-e2e:
+    PGHOST=127.0.0.1 PGPORT=$(POSTGRES_PORT) PGUSER=$(POSTGRES_USER) PGPASSWORD=$(POSTGRES_PASSWORD) PGDATABASE=$(POSTGRES_DB) \
+        go test -bench=. -benchmem -run=^$ ./e2e
 
 tidy:
 	go mod tidy
