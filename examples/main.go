@@ -158,8 +158,8 @@ func main() {
 	var updated []map[string]any
 	_, _ = db.Query().Table("users").Set("username = ?", "u2_final").Where("email = ?", "u2@example.com").Returning("id", "username").ExecUpdate(ctx, &updated)
 
-	// Delete builder
-	_, _ = db.Query().Table("profiles").Where("user_id = ?", 1).Delete(ctx)
+	// Delete builder (hard delete example)
+	_, _ = db.Query().Table("profiles").Where("user_id = ?", 1).HardDelete().Delete(ctx)
 
 	// Struct helpers
 	_, _ = db.Query().Table("profiles").InsertStruct(ctx, &Profile{UserID: 1, Bio: "bio2"})

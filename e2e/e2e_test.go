@@ -644,7 +644,7 @@ func TestQueryBuilderFirstLastAndDelete(t *testing.T) {
 		t.Fatalf("expected error when Last called without OrderBy")
 	}
 
-	// Delete using builder
+	// Delete using builder (soft delete by default)
 	aff, err := kn.Query().Table("users").Where("username = ?", "f2").Delete(ctx)
 	if err != nil {
 		t.Fatalf("delete: %v", err)
@@ -653,9 +653,9 @@ func TestQueryBuilderFirstLastAndDelete(t *testing.T) {
 		t.Fatalf("expected 1 row deleted, got %d", aff)
 	}
 
-	// Ensure f2 gone
+	// Ensure f2 is hidden from active queries (deleted_at IS NULL)
 	var rows []User
-	if err := kn.Query().Table("users").Where("username = ?", "f2").Find(ctx, &rows); err != nil {
+	if err := kn.Query().Table("users").Where("username = ?", "f2").Where("deleted_at IS NULL").Find(ctx, &rows); err != nil {
 		t.Fatalf("find: %v", err)
 	}
 	if len(rows) != 0 {

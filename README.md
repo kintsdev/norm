@@ -1,38 +1,39 @@
-## norm
+# norm (Next ORM)
 
-Production-ready, PGX v5 tabanlı hafif ORM ve query builder (PostgreSQL). Bağlantı havuzu, otomatik migration, fluent query builder, generic repository, soft delete, optimistic locking, transaction yönetimi, read/write splitting, retry/backoff, ve kapsamlı e2e testleri ile gelir.
+Production-ready, lightweight ORM and query builder for PostgreSQL on top of PGX v5. Ships with connection pooling, automatic migrations from struct tags, a fluent query builder, generic repository, soft delete, optimistic locking, transactions, read/write splitting, retry/backoff, a circuit breaker, and comprehensive e2e tests.
 
-### Özellikler
+### Features
 
-- PGX v5 (`pgxpool`) ile hızlı ve güvenilir bağlantı yönetimi
-- Config ile esnek ayarlar: pool sınırları, timeouts, statement cache, app name vb.
-- Otomatik migration: struct tag’lerden tablo/kolon/index/FK üretimi, idempotent plan, transactional apply, rename diff, type/nullability uyarıları
-- Query builder: `Select/Where/Join/OrderBy/Limit/Offset`, `Raw`, `First/Last`, `Delete`, `INSERT ... RETURNING`, `ON CONFLICT DO UPDATE`
-- Condition DSL: `Eq/Ne/Gt/Ge/Lt/Le/In/And/Or`
+- Fast, reliable connections via PGX v5 (`pgxpool`)
+- Flexible `Config`: pool limits, timeouts, statement cache, app name, etc.
+- Auto-migration from struct tags: tables/columns/indexes/FKs, idempotent plan, transactional apply, rename diffs, type/nullability warnings
+- Query builder: `Select/Where/Join/OrderBy/Limit/Offset`, `Raw`, `First/Last`, `Delete` (soft by default, `HardDelete()` to force hard), `INSERT ... RETURNING`, `ON CONFLICT DO UPDATE`
+- Condition DSL: `Eq/Ne/Gt/Ge/Lt/Le/In/And/Or`, date helpers
 - Keyset pagination: `After/Before`
 - Repository: generic CRUD, bulk create, partial update, soft delete, scopes, optimistic locking
-- Transaction yönetimi: `TxManager`, transaction-bound QueryBuilder
-- Read/Write splitting: read pool opsiyonel, fallback
+- Transactions: `TxManager`, transaction-bound QueryBuilder
+- Read/Write splitting: optional read pool and transparent routing
 - Retry: exponential backoff
 - Circuit Breaker: optional open/half-open/closed with metrics hooks
 
-Not: OpenTelemetry/Prometheus entegrasyonları şimdilik kapsam dışıdır.
+Note: OpenTelemetry/Prometheus integrations are not included yet.
 
-### Kurulum
+### Install
 
 ```bash
 go get github.com/kintsdev/norm
 ```
 
-Go mod klasörünüzde `github.com/kintsdev/norm` import edin.
-
-### Hızlı Başlangıç
+### Quick Start
 
 ```go
 package main
 
 import (
-     "github.com/kintsdev/norm"
+    "context"
+    "time"
+
+    "github.com/kintsdev/norm"
 )
 
 type User struct {
@@ -49,63 +50,91 @@ type User struct {
 
 func main() {
     cfg := &norm.Config{
-        Host: "127.0.0.1", Port: 5432, Database: "postgres", User: "postgres", Password: "postgres",
+        Host: "127.0.0.1", Port: 5432, Database: "postgres", Username: "postgres", Password: "postgres",
         SSLMode: "disable", StatementCacheCapacity: 256,
     }
     kn, _ := norm.New(cfg)
     defer kn.Close()
 
-    // migrate
+    // Auto-migrate schema from struct tags
     _ = kn.AutoMigrate(&User{})
 
-    // repository
+    // Repository
     repo := norm.NewRepository[User](kn)
     _ = repo.Create(context.Background(), &User{Email: "u@example.com", Username: "u", Password: "x"})
 
-    // query builder
+    // Query builder
     var users []User
     _ = kn.Query().Table("users").Where("is_active = ?", true).OrderBy("id ASC").Limit(10).Find(context.Background(), &users)
 }
 ```
 
-### Struct Tag’leri (özet)
+### Struct Tags
 
-- `db:"column_name"` kolon adını belirler; boşsa snake_case kullanılır
-- `norm:"primary_key"`, `auto_increment`, `unique`, `not_null`, `default:now()`, `index`, `on_update:now()`, `version`
-- `norm:"fk:other_table(other_id)"` yabancı anahtar
-- `norm:"rename:old_column"` kolon rename diff’i için
-- Tip override: `varchar(50)`, `text`, `timestamptz`, vb.
+- `db:"column_name"`: Column name; if empty, the field name is converted to snake_case.
+- `norm:"..."`: Primary tag for schema/behavior (legacy `orm:"..."` still works as a fallback).
 
-### Migration
+Supported `norm` tokens (mix and match, comma separated):
 
-- Plan/preview: mevcut şemayı `information_schema` üzerinden okuyup güvenli plan üretir
-- `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, index/FK oluşturma
-- Rename’ler için güvenli `ALTER TABLE ... RENAME COLUMN ...`
-- Tip ve nullability değişimleri için Warnings ve UnsafeStatements
-- Uygulama transactional ve advisory lock ile
-- `schema_migrations` tablosunda checksum ile idempotent kayıt
+- Primary key: `primary_key`, composite via `primary_key:group`
+- Auto-increment identity: `auto_increment`
+- Unique: `unique`, composite via `unique:group`, optional index name via `unique_name:name`
+- Indexing: `index`, `index:name`, index method `using:gin|btree|hash`, partial index `index_where:(expr)`
+- Foreign keys: `fk:other_table(other_id)`, `fk_name:name`, actions `on_delete:cascade|restrict|set null|set default`, optional `deferrable`, `initially_deferred`
+- Nullability: `not_null`, or explicit `nullable`
+- Default: `default:<expr>` (e.g., `default:now()`)
+- On update: `on_update:now()` (repository auto-sets NOW() on update for such columns)
+- Version column for optimistic locking: `version` (treated as BIGINT)
+- Rename diff: `rename:old_column`
+- Collation: `collate:<name>`
+- Comment: `comment:...`
+- Type override: `type:decimal(20,8)` or direct types like `varchar(50)`, `text`, `timestamptz`, `numeric(10,2)`, `citext`
+- Ignore field: `-` or `ignore` (excluded from migrations and insert/update helpers)
 
-Yakında: manuel (dosya tabanlı) Up/Down migrasyonları, rollback desteği, drop/rename table için guard’lar.
+Examples:
 
-### Read/Write Splitting ve Retry
+```go
+// Composite unique
+Slug   string `db:"slug" norm:"not_null,unique:tenant_slug"`
+Tenant int64  `db:"tenant_id" norm:"not_null,unique:tenant_slug,unique_name:uq_accounts_tenant_slug"`
 
-- `Config.ReadOnlyConnString` verilirse read pool açılır; `Query()` otomatik olarak read sorgularını read pool’a yönlendirir, yazmalar primary’de çalışır
-- Override: `UsePrimary()` ile okuma sorgusunu primary’e yönlendirebilirsiniz; `UseReadPool()` manuel read pool kullanımı sağlar
-- Retry: `RetryAttempts` ve `RetryBackoff` (exponential + jitter)
-- Circuit Breaker: `CircuitBreakerEnabled`, `CircuitFailureThreshold`, `CircuitOpenTimeout`, `CircuitHalfOpenMaxCalls`
+// Partial index and method
+Email  string `db:"email" norm:"index,using:gin,index_where:(deleted_at IS NULL)"`
 
-### Opsiyonel Cache Hookları
+// Decimal override
+Amount float64 `db:"amount" norm:"type:decimal(20,8)"`
 
-- `WithCache(cache)` ile opsiyonel cache sağlayın (örn. Redis adaptörü)
-- Okuma: `Query().WithCacheKey(key, ttl).Find/First` read-through cache (minimal hook)
-- Yazma: `WithInvalidateKeys(keys...)` ile insert/update/delete/exec sonrası invalidation çağrısı
+// FK with actions
+UserID int64 `db:"user_id" norm:"not_null,fk:users(id),on_delete:cascade,fk_name:fk_posts_user"`
+```
 
-### Testler
+### Migrations
 
-- `Makefile` ile Postgres 17.5 docker ve kapsamlı e2e testleri
-- Testler CRUD, soft delete, transaction, query builder, pagination, DSL, struct ops, migration diff/quoting’i kapsar
+- Plan/preview: reads current schema via `information_schema`, builds a safe plan
+- Creates tables/columns, composite indexes/uniques, and foreign keys (with actions)
+- Rename-safe diffs: `ALTER TABLE ... RENAME COLUMN ...`
+- Type/nullability changes produce warnings and unsafe statements
+- Transactional apply with advisory lock
+- Records checksums in `schema_migrations` (idempotent)
 
-Çalıştırma:
+Manual migrations (file-based Up/Down) and rollback support exist with safety guards; see `migration` package and tests.
+
+### Read/Write Splitting, Retry, Circuit Breaker
+
+- If `Config.ReadOnlyConnString` is set, a read pool is opened and `Query()` routes read queries there automatically. Writes go to primary.
+- Override per-query: `UsePrimary()` or `UseReadPool()`.
+- Retry with `RetryAttempts` and `RetryBackoff` (exponential + jitter).
+- Circuit breaker: `CircuitBreakerEnabled`, `CircuitFailureThreshold`, `CircuitOpenTimeout`, `CircuitHalfOpenMaxCalls`.
+
+### Optional Cache Hooks
+
+- Provide a cache via `WithCache(cache)` (e.g., a Redis adapter)
+- Read-through: `Query().WithCacheKey(key, ttl).Find/First`
+- Invalidation: `WithInvalidateKeys(keys...).Exec/Insert/Update/Delete`
+
+### Testing
+
+- Make targets spin up Postgres 17.5 in Docker and run e2e tests
 
 ```bash
 make db-up
@@ -113,10 +142,6 @@ make test-e2e
 make db-down
 ```
 
-### Yol Haritası
-
-Detaylı plan için `ROADMAP.md` dosyasına bakın.
-
-### Lisans
+### License
 
 MIT

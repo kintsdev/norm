@@ -119,8 +119,15 @@ func TestRawAndDelete(t *testing.T) {
 
 	qb2 := (&QueryBuilder{kn: kn, exec: f}).Table("users").Where("id = ?", 5)
 	_, _ = qb2.Delete(context.Background())
+	if f.lastSQL != "UPDATE users SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL" {
+		t.Fatalf("delete sql: %s", f.lastSQL)
+	}
+
+	// Hard delete opt-in
+	qb3 := (&QueryBuilder{kn: kn, exec: f}).Table("users").Where("id = ?", 6).HardDelete()
+	_, _ = qb3.Delete(context.Background())
 	if f.lastSQL != "DELETE FROM users WHERE id = $1" {
-		t.Fatalf("delete sql")
+		t.Fatalf("hard delete sql: %s", f.lastSQL)
 	}
 }
 

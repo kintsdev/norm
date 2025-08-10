@@ -45,4 +45,14 @@ func TestQueryBuilder_Delete_SQL(t *testing.T) {
 	if ex.lastSQL == "" || len(ex.lastArgs) != 1 {
 		t.Fatalf("no delete exec")
 	}
+	if ex.lastSQL != "UPDATE t SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL" {
+		t.Fatalf("soft delete sql: %s", ex.lastSQL)
+	}
+
+	// Hard delete
+	qb2 := (&QueryBuilder{kn: kn, exec: ex}).Table("t").Where("id = ?", 2).HardDelete()
+	_, _ = qb2.Delete(context.Background())
+	if ex.lastSQL != "DELETE FROM t WHERE id = $1" {
+		t.Fatalf("hard delete sql: %s", ex.lastSQL)
+	}
 }

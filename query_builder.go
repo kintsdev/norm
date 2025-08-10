@@ -29,6 +29,7 @@ type QueryBuilder struct {
 	isRaw   bool
 	// write ops
 	op            string // "insert" | "update" | "delete"
+	deleteHard    bool   // when true, build hard DELETE instead of soft delete
 	insertColumns []string
 	insertRows    [][]any
 	returningCols []string
@@ -428,14 +429,34 @@ func (qb *QueryBuilder) Last(ctx context.Context, dest any) error {
 
 // buildDelete builds a DELETE statement from the current builder state
 func (qb *QueryBuilder) buildDelete() (string, []any) {
+	// Hard delete path remains the same
+	if qb.deleteHard {
+		var sb strings.Builder
+		sb.WriteString("DELETE FROM ")
+		sb.WriteString(qb.table)
+		if len(qb.wheres) > 0 {
+			sb.WriteString(" WHERE ")
+			where := strings.Join(qb.wheres, " AND ")
+			where = sqlutil.ConvertQMarksToPgPlaceholders(where)
+			sb.WriteString(where)
+		}
+		return sb.String(), qb.args
+	}
+
+	// Default: soft delete by setting deleted_at
 	var sb strings.Builder
-	sb.WriteString("DELETE FROM ")
+	sb.WriteString("UPDATE ")
 	sb.WriteString(qb.table)
+	sb.WriteString(" SET deleted_at = NOW()")
+	// where clauses + guard to avoid re-deleting already deleted rows
 	if len(qb.wheres) > 0 {
 		sb.WriteString(" WHERE ")
 		where := strings.Join(qb.wheres, " AND ")
 		where = sqlutil.ConvertQMarksToPgPlaceholders(where)
 		sb.WriteString(where)
+		sb.WriteString(" AND deleted_at IS NULL")
+	} else {
+		sb.WriteString(" WHERE deleted_at IS NULL")
 	}
 	return sb.String(), qb.args
 }
@@ -458,6 +479,12 @@ func (qb *QueryBuilder) Delete(ctx context.Context) (int64, error) {
 		_ = qb.kn.cache.Invalidate(ctx, qb.invalidate...)
 	}
 	return int64(tag.RowsAffected()), nil
+}
+
+// HardDelete opts into hard delete for this builder chain
+func (qb *QueryBuilder) HardDelete() *QueryBuilder {
+	qb.deleteHard = true
+	return qb
 }
 
 // convert '?' placeholders to $1, $2... used by pgx
