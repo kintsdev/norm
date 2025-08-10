@@ -1134,6 +1134,54 @@ func TestIdentifierQuotingHelpersInBuilder(t *testing.T) {
 	}
 }
 
+func TestEagerAndLazyLoadHelpers(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	// migrate and seed
+	if err := kn.AutoMigrate(&User{}, &Profile{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	_, _ = kn.Pool().Exec(ctx, "TRUNCATE users RESTART IDENTITY CASCADE")
+	_, _ = kn.Pool().Exec(ctx, "TRUNCATE profiles RESTART IDENTITY CASCADE")
+	// parents
+	_, _ = kn.Pool().Exec(ctx, "INSERT INTO users(email, username, password) VALUES ($1,$2,$3),($4,$5,$6)",
+		"el1@example.com", "el1", "x",
+		"el2@example.com", "el2", "x",
+	)
+	// children: 2 for user 1, 1 for user 2
+	_, _ = kn.Pool().Exec(ctx, "INSERT INTO profiles(user_id, bio) VALUES ($1,$2),($3,$4),($5,$6)",
+		1, "p1-1",
+		1, "p1-2",
+		2, "p2-1",
+	)
+	// load parents via repo
+	repo := kintsnorm.NewRepository[User](kn)
+	parents, err := repo.Find(ctx)
+	if err != nil || len(parents) != 2 {
+		t.Fatalf("load parents: %+v err=%v", parents, err)
+	}
+	// add a field on the fly using a holder struct local to this test to receive children
+	type userWithProfiles struct {
+		User
+		Profiles []*Profile
+	}
+	ups := []*userWithProfiles{{User: *parents[0]}, {User: *parents[1]}}
+	// Eager load
+	set := func(p *userWithProfiles, children []*Profile) { p.Profiles = children }
+	getID := func(p *userWithProfiles) any { return p.ID }
+	if err := kintsnorm.EagerLoadMany[userWithProfiles, Profile](ctx, kn, ups, getID, "user_id", set); err != nil {
+		t.Fatalf("eager load: %v", err)
+	}
+	if len(ups[0].Profiles) != 2 || len(ups[1].Profiles) != 1 {
+		t.Fatalf("unexpected grouping: %+v %+v", ups[0].Profiles, ups[1].Profiles)
+	}
+	// Lazy load
+	lazy, err := kintsnorm.LazyLoadMany[Profile](ctx, kn, 1, "user_id")
+	if err != nil || len(lazy) != 2 {
+		t.Fatalf("lazy load: %v len=%d", err, len(lazy))
+	}
+}
+
 func TestErrorMapping_DuplicateAndFKViolation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

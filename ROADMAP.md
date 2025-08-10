@@ -50,7 +50,7 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [x] Transactions (`TxManager`, transaction-bound QueryBuilder)
 - [ ] Auto route read operations to read-replica pool; writes to primary
 - [x] Upsert helpers in repository (e2e covered)
-- [ ] Eager/lazy loading helpers
+- [x] Eager/lazy loading helpers (e2e covered)
 
 ### Read/Write Splitting & Caching
 
