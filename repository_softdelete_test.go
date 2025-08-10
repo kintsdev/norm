@@ -22,12 +22,8 @@ func (r *recExec) Query(ctx context.Context, sql string, _ ...any) (pgx.Rows, er
 }
 func (r *recExec) QueryRow(ctx context.Context, sql string, _ ...any) pgx.Row {
 	r.lastSQL = sql
-	return errRow{errors.New("no")}
+	return errorRow{err: errors.New("no")}
 }
-
-type errRow struct{ err error }
-
-func (e errRow) Scan(_ ...any) error { return e.err }
 
 type softUser struct {
 	ID        int64  `db:"id" orm:"primary_key"`
