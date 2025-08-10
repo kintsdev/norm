@@ -5,7 +5,7 @@ import (
 )
 
 type simpleModel struct {
-	ID   int64  `db:"id" orm:"primary_key,auto_increment"`
+	ID   int64  `db:"id" norm:"primary_key,auto_increment"`
 	Name string `db:"name"`
 }
 

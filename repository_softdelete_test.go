@@ -26,7 +26,7 @@ func (r *recExec) QueryRow(ctx context.Context, sql string, _ ...any) pgx.Row {
 }
 
 type softUser struct {
-	ID        int64  `db:"id" orm:"primary_key"`
+	ID        int64  `db:"id" norm:"primary_key"`
 	DeletedAt *int64 `db:"deleted_at"`
 }
 

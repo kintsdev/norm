@@ -77,7 +77,11 @@ func parseModel(model any) modelInfo {
 		if db == "" {
 			db = toSnakeCase(f.Name)
 		}
-		orm := f.Tag.Get("orm")
+		// Prefer `norm` tag; fallback to legacy `orm`
+		orm := f.Tag.Get("norm")
+		if orm == "" {
+			orm = f.Tag.Get("orm")
+		}
 		ft := fieldTag{Name: f.Name, DBName: db, DBType: mapGoTypeToPgType(f.Type, orm), IsPointer: f.Type.Kind() == reflect.Ptr}
 		if orm != "" {
 			for _, p := range strings.Split(orm, ",") {

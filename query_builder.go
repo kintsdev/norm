@@ -738,7 +738,11 @@ func (qb *QueryBuilder) InsertStruct(ctx context.Context, entity any) (int64, er
 		if col == "" {
 			col = core.ToSnakeCase(f.Name)
 		}
-		orm := f.Tag.Get("orm")
+		// Prefer `norm` tag; fallback to legacy `orm`
+		orm := f.Tag.Get("norm")
+		if orm == "" {
+			orm = f.Tag.Get("orm")
+		}
 		fv := v.Field(i)
 		if strings.Contains(orm, "default:") && fv.IsZero() {
 			continue

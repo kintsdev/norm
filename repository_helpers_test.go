@@ -7,9 +7,9 @@ import (
 )
 
 type repoUser struct {
-	ID        int64     `db:"id" orm:"primary_key,auto_increment"`
+	ID        int64     `db:"id" norm:"primary_key,auto_increment"`
 	Email     string    `db:"email"`
-	UpdatedAt time.Time `db:"updated_at" orm:"on_update:now()"`
+	UpdatedAt time.Time `db:"updated_at" norm:"on_update:now()"`
 }
 
 func TestRepo_TableName(t *testing.T) {

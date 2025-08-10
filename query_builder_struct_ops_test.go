@@ -27,9 +27,9 @@ func (r *recExecQB) QueryRow(_ context.Context, sql string, args ...any) pgx.Row
 }
 
 type qUser struct {
-	ID    int64  `db:"id" orm:"primary_key,auto_increment"`
+	ID    int64  `db:"id" norm:"primary_key,auto_increment"`
 	Name  string `db:"name"`
-	Email string `db:"email" orm:"default:now()"`
+	Email string `db:"email" norm:"default:now()"`
 }
 
 func TestInsertStructBuildsSQL(t *testing.T) {

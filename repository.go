@@ -101,7 +101,11 @@ func (r *repo[T]) Create(ctx context.Context, entity *T) error {
 			if mapper.AutoIncrement && strings.EqualFold(col, mapper.PrimaryColumn) {
 				continue
 			}
-			orm := f.Tag.Get("orm")
+			// Prefer `norm` tag; fallback to legacy `orm`
+			orm := f.Tag.Get("norm")
+			if orm == "" {
+				orm = f.Tag.Get("orm")
+			}
 			fv := val.Field(i)
 			if strings.Contains(orm, "default:") && fv.IsZero() {
 				continue
@@ -558,7 +562,11 @@ func (r *repo[T]) onUpdateNowColumns(typ reflect.Type) map[string]bool {
 		if f.PkgPath != "" {
 			continue
 		}
-		orm := f.Tag.Get("orm")
+		// Prefer `norm` tag; fallback to legacy `orm`
+		orm := f.Tag.Get("norm")
+		if orm == "" {
+			orm = f.Tag.Get("orm")
+		}
 		if orm == "" {
 			continue
 		}

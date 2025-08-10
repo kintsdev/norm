@@ -17,37 +17,37 @@ import (
 )
 
 type User struct {
-	ID        int64      `db:"id" orm:"primary_key,auto_increment"`
-	Email     string     `db:"email" orm:"unique,not_null,index,varchar(255)"`
-	Username  string     `db:"username" orm:"unique,not_null,varchar(50)"`
-	Password  string     `db:"password" orm:"not_null,varchar(255)"`
-	IsActive  bool       `db:"is_active" orm:"default:true"`
-	CreatedAt time.Time  `db:"created_at" orm:"not_null,default:now()"`
-	UpdatedAt time.Time  `db:"updated_at" orm:"not_null,default:now(),on_update:now()"`
-	DeletedAt *time.Time `db:"deleted_at" orm:"index"`
-	Version   int64      `db:"version" orm:"version"`
+	ID        int64      `db:"id" norm:"primary_key,auto_increment"`
+	Email     string     `db:"email" norm:"unique,not_null,index,varchar(255)"`
+	Username  string     `db:"username" norm:"unique,not_null,varchar(50)"`
+	Password  string     `db:"password" norm:"not_null,varchar(255)"`
+	IsActive  bool       `db:"is_active" norm:"default:true"`
+	CreatedAt time.Time  `db:"created_at" norm:"not_null,default:now()"`
+	UpdatedAt time.Time  `db:"updated_at" norm:"not_null,default:now(),on_update:now()"`
+	DeletedAt *time.Time `db:"deleted_at" norm:"index"`
+	Version   int64      `db:"version" norm:"version"`
 }
 
 type Profile struct {
-	ID        int64     `db:"id" orm:"primary_key,auto_increment"`
-	UserID    int64     `db:"user_id" orm:"index,not_null"`
-	Bio       string    `db:"bio" orm:"varchar(255)"`
-	CreatedAt time.Time `db:"created_at" orm:"not_null,default:now()"`
+	ID        int64     `db:"id" norm:"primary_key,auto_increment"`
+	UserID    int64     `db:"user_id" norm:"index,not_null"`
+	Bio       string    `db:"bio" norm:"varchar(255)"`
+	CreatedAt time.Time `db:"created_at" norm:"not_null,default:now()"`
 }
 
 // Model without soft delete column to validate errors
 type NoSoft struct {
-	ID        int64     `db:"id" orm:"primary_key,auto_increment"`
-	Name      string    `db:"name" orm:"not_null,varchar(100)"`
-	CreatedAt time.Time `db:"created_at" orm:"not_null,default:now()"`
+	ID        int64     `db:"id" norm:"primary_key,auto_increment"`
+	Name      string    `db:"name" norm:"not_null,varchar(100)"`
+	CreatedAt time.Time `db:"created_at" norm:"not_null,default:now()"`
 }
 
 // FKPost -> fk_posts (has FK to users)
 type FKPost struct {
-	ID        int64     `db:"id" orm:"primary_key,auto_increment"`
-	UserID    int64     `db:"user_id" orm:"not_null,fk:users(id)"`
+	ID        int64     `db:"id" norm:"primary_key,auto_increment"`
+	UserID    int64     `db:"user_id" norm:"not_null,fk:users(id)"`
 	Body      string    `db:"body"`
-	CreatedAt time.Time `db:"created_at" orm:"not_null,default:now()"`
+	CreatedAt time.Time `db:"created_at" norm:"not_null,default:now()"`
 }
 
 var kn *kintsnorm.KintsNorm
@@ -986,21 +986,21 @@ func TestUpdatePartialEmptyBumpsUpdatedAt(t *testing.T) {
 
 // Rename -> renames
 type Rename struct {
-	ID   int64  `db:"id" orm:"primary_key,auto_increment"`
-	Name string `db:"display_name" orm:"rename:name,text"`
+	ID   int64  `db:"id" norm:"primary_key,auto_increment"`
+	Name string `db:"display_name" norm:"rename:name,text"`
 }
 
 // TypeTest -> type_tests
 type TypeTest struct {
-	ID   int64  `db:"id" orm:"primary_key,auto_increment"`
+	ID   int64  `db:"id" norm:"primary_key,auto_increment"`
 	Age  int64  `db:"age"`
-	Name string `db:"name" orm:"not_null"`
+	Name string `db:"name" norm:"not_null"`
 }
 
 // Quoted -> quoteds
 type Quoted struct {
-	ID    int64  `db:"id" orm:"primary_key,auto_increment"`
-	Order string `db:"order" orm:"varchar(50),index"`
+	ID    int64  `db:"id" norm:"primary_key,auto_increment"`
+	Order string `db:"order" norm:"varchar(50),index"`
 }
 
 func TestMigrationPlanRenameAndTypeNullabilityWarnings(t *testing.T) {

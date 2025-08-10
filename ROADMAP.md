@@ -18,7 +18,7 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [x] Transactional migrations with `pg_advisory_xact_lock`
 - [x] Plan/preview API with diff against `information_schema`
 - [x] Identifier quoting for DDL
-- [x] Rename detection via `orm:"rename:old_name"` (safe plan)
+- [x] Rename detection via `norm:"rename:old_name"` (safe plan)
 - [x] Type and nullability change warnings + unsafe statements
 - [x] Manual migrations: file-based SQL (Up/Down)
 - [ ] Go-based migration helpers (functions)
@@ -46,7 +46,7 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [x] Generic CRUD (`Create/Update/Delete/Find/Count/Exists`)
 - [x] Partial updates, bulk inserts (`CreateBatch`, copy support placeholder)
 - [x] Soft delete with default scoping (`WithTrashed`, `OnlyTrashed`, `Restore`, `PurgeTrashed`)
-- [x] Optimistic locking (`orm:"version"`)
+- [x] Optimistic locking (`norm:"version"`)
 - [x] Transactions (`TxManager`, transaction-bound QueryBuilder)
 - [ ] Auto route read operations to read-replica pool; writes to primary
 - [x] Upsert helpers in repository (e2e covered)

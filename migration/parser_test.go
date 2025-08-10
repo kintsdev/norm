@@ -7,11 +7,11 @@ import (
 )
 
 type mUser struct {
-	ID        int64      `db:"id" orm:"primary_key,auto_increment"`
-	Email     string     `db:"email" orm:"unique,varchar(100)"`
-	Username  string     `db:"username" orm:"index"`
-	Version   int64      `db:"version" orm:"version"`
-	CreatedAt time.Time  `db:"created_at" orm:"not_null,default:now(),on_update:now()"`
+	ID        int64      `db:"id" norm:"primary_key,auto_increment"`
+	Email     string     `db:"email" norm:"unique,varchar(100)"`
+	Username  string     `db:"username" norm:"index"`
+	Version   int64      `db:"version" norm:"version"`
+	CreatedAt time.Time  `db:"created_at" norm:"not_null,default:now(),on_update:now()"`
 	DeletedAt *time.Time `db:"deleted_at"`
 }
 

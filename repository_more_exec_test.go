@@ -25,9 +25,9 @@ func (r *recExecRepo) QueryRow(_ context.Context, _ string, _ ...any) pgx.Row {
 }
 
 type repUser struct {
-	ID      int64  `db:"id" orm:"primary_key,auto_increment"`
+	ID      int64  `db:"id" norm:"primary_key,auto_increment"`
 	Name    string `db:"name"`
-	Version int64  `db:"version" orm:"version"`
+	Version int64  `db:"version" norm:"version"`
 }
 
 func TestRepository_Update_SQL(t *testing.T) {

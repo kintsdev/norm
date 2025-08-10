@@ -17,7 +17,7 @@ func (e execTag) Query(_ context.Context, _ string, _ ...any) (pgx.Rows, error) 
 func (e execTag) QueryRow(_ context.Context, _ string, _ ...any) pgx.Row        { return errorRow{} }
 
 type trashy struct {
-	ID        int64  `db:"id" orm:"primary_key"`
+	ID        int64  `db:"id" norm:"primary_key"`
 	DeletedAt *int64 `db:"deleted_at"`
 }
 

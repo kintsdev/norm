@@ -10,14 +10,14 @@ import (
 )
 
 type benchUser struct {
-	ID        int64  `db:"id" orm:"primary_key,auto_increment"`
-	Email     string `db:"email" orm:"unique,not_null,index,varchar(255)"`
-	Username  string `db:"username" orm:"unique,not_null,varchar(50)"`
-	Password  string `db:"password" orm:"not_null,varchar(255)"`
-	IsActive  bool   `db:"is_active" orm:"default:true"`
+	ID        int64  `db:"id" norm:"primary_key,auto_increment"`
+	Email     string `db:"email" norm:"unique,not_null,index,varchar(255)"`
+	Username  string `db:"username" norm:"unique,not_null,varchar(50)"`
+	Password  string `db:"password" norm:"not_null,varchar(255)"`
+	IsActive  bool   `db:"is_active" norm:"default:true"`
 	CreatedAt int64  `db:"created_at"`
-	UpdatedAt int64  `db:"updated_at" orm:"on_update:now()"`
-	Version   int64  `db:"version" orm:"version"`
+	UpdatedAt int64  `db:"updated_at" norm:"on_update:now()"`
+	Version   int64  `db:"version" norm:"version"`
 }
 
 func BenchmarkSQLUtilConvertPlaceholders(b *testing.B) {

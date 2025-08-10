@@ -37,7 +37,11 @@ func StructMapper(t reflect.Type) StructMapping {
 		}
 		m.FieldsByColumn[strings.ToLower(col)] = StructFieldInfo{Index: f.Index, Name: f.Name}
 
-		orm := f.Tag.Get("orm")
+		// Prefer `norm` tag; fallback to legacy `orm`
+		orm := f.Tag.Get("norm")
+		if orm == "" {
+			orm = f.Tag.Get("orm")
+		}
 		if orm != "" {
 			parts := strings.Split(orm, ",")
 			for _, p := range parts {

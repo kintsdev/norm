@@ -7,9 +7,9 @@ import (
 )
 
 type smUser struct {
-	ID        int64      `db:"id" orm:"primary_key,auto_increment"`
+	ID        int64      `db:"id" norm:"primary_key,auto_increment"`
 	Email     string     `db:"email"`
-	Version   int64      `db:"version" orm:"version"`
+	Version   int64      `db:"version" norm:"version"`
 	DeletedAt *time.Time `db:"deleted_at"`
 }
 
