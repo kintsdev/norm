@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -1711,6 +1712,143 @@ func TestEagerAndLazyLoadHelpers(t *testing.T) {
 	lazy, err := kintsnorm.LazyLoadMany[Profile](ctx, kn, 1, "user_id")
 	if err != nil || len(lazy) != 2 {
 		t.Fatalf("lazy load: %v len=%d", err, len(lazy))
+	}
+}
+
+// --- Error mapping new cases ---
+
+func TestErrorMapping_SyntaxAndUndefined(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	var rows []map[string]any
+	// Syntax error 42601 -> Validation
+	err := kn.Query().Raw("SELEC 1").Find(ctx, &rows)
+	if err == nil {
+		t.Fatalf("expected syntax error")
+	}
+	var oe *kintsnorm.ORMError
+	if !errors.As(err, &oe) || oe.Code != kintsnorm.ErrCodeValidation {
+		t.Fatalf("expected ErrCodeValidation for syntax, got %#v", err)
+	}
+	// Undefined table 42P01 -> Validation
+	err = kn.Query().Raw("SELECT * FROM no_such_table").Find(ctx, &rows)
+	if err == nil || !errors.As(err, &oe) || oe.Code != kintsnorm.ErrCodeValidation {
+		t.Fatalf("expected ErrCodeValidation for undefined table, got %#v", err)
+	}
+}
+
+func TestErrorMapping_LockNotAvailable(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// setup table
+	_, _ = kn.Pool().Exec(ctx, `DROP TABLE IF EXISTS t_lock`)
+	if _, err := kn.Pool().Exec(ctx, `CREATE TABLE t_lock(id INT PRIMARY KEY)`); err != nil {
+		t.Fatalf("create t_lock: %v", err)
+	}
+	if _, err := kn.Pool().Exec(ctx, `INSERT INTO t_lock(id) VALUES (1)`); err != nil {
+		t.Fatalf("seed t_lock: %v", err)
+	}
+
+	// tx1 locks the row
+	tx1, err := kn.Tx().BeginTx(ctx, &kintsnorm.TxOptions{})
+	if err != nil {
+		t.Fatalf("begin tx1: %v", err)
+	}
+	var dummy []map[string]any
+	if err := tx1.Query().Raw("SELECT id FROM t_lock WHERE id = 1 FOR UPDATE").Find(ctx, &dummy); err != nil {
+		t.Fatalf("tx1 lock: %v", err)
+	}
+
+	// tx2 tries NOWAIT -> 55P03 -> Transaction
+	tx2, err := kn.Tx().BeginTx(ctx, &kintsnorm.TxOptions{})
+	if err != nil {
+		t.Fatalf("begin tx2: %v", err)
+	}
+	err = tx2.Query().Raw("SELECT id FROM t_lock WHERE id = 1 FOR UPDATE NOWAIT").Find(ctx, &dummy)
+	_ = tx2.Rollback(ctx)
+	_ = tx1.Rollback(ctx)
+	var oe *kintsnorm.ORMError
+	if err == nil || !errors.As(err, &oe) || oe.Code != kintsnorm.ErrCodeTransaction {
+		t.Fatalf("expected ErrCodeTransaction for lock_not_available, got %#v", err)
+	}
+}
+
+func TestErrorMapping_QueryCanceled(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	tx, err := kn.Tx().BeginTx(ctx, &kintsnorm.TxOptions{})
+	if err != nil {
+		t.Fatalf("begin tx: %v", err)
+	}
+	// set short statement timeout within the tx
+	if err := tx.Query().Raw("SET LOCAL statement_timeout = 10").Exec(ctx); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("set timeout: %v", err)
+	}
+	var rows []map[string]any
+	err = tx.Query().Raw("SELECT pg_sleep(0.05)").Find(ctx, &rows)
+	_ = tx.Rollback(ctx)
+	var oe *kintsnorm.ORMError
+	if err == nil || !errors.As(err, &oe) || oe.Code != kintsnorm.ErrCodeTransaction {
+		t.Fatalf("expected ErrCodeTransaction for query_canceled, got %#v", err)
+	}
+}
+
+func TestErrorMapping_CircuitBreakerOpen(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// separate client with breaker enabled and low threshold
+	host := getenvDefault("PGHOST", "127.0.0.1")
+	port := getenvDefault("PGPORT", "5432")
+	user := getenvDefault("PGUSER", "postgres")
+	pass := getenvDefault("PGPASSWORD", "postgres")
+	dbname := getenvDefault("PGDATABASE", "postgres")
+	dsn := fmt.Sprintf("host=%s port=%s dbname=%s user=%s password=%s sslmode=disable", host, port, dbname, user, pass)
+	knb, err := kintsnorm.NewWithConnString(dsn,
+		kintsnorm.WithLogMode(kintsnorm.LogSilent),
+	)
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	// enable breaker after creation (simulate via config fields not available); recreate with Config to set breaker
+	_ = knb.Close()
+	cfg := &kintsnorm.Config{CircuitBreakerEnabled: true, CircuitFailureThreshold: 1}
+	// fill cfg DSN
+	cfg.SSLMode = "disable"
+	cfg.Host = host
+	p, _ := strconv.Atoi(port)
+	cfg.Port = p
+	cfg.Database = dbname
+	cfg.Username = user
+	cfg.Password = pass
+	knb, err = kintsnorm.New(cfg)
+	if err != nil {
+		t.Fatalf("new cfg: %v", err)
+	}
+	defer func() { _ = knb.Close() }()
+
+	// first failing query trips the breaker
+	var rows []map[string]any
+	_ = knb.Query().Raw("SELECT * FROM not_a_table").Find(ctx, &rows)
+	// subsequent query should be blocked by open circuit and map to connection error
+	err = knb.Query().Raw("SELECT 1").Find(ctx, &rows)
+	var oe *kintsnorm.ORMError
+	if err == nil || !errors.As(err, &oe) || oe.Code != kintsnorm.ErrCodeConnection {
+		t.Fatalf("expected ErrCodeConnection for circuit open, got %#v", err)
+	}
+}
+
+func TestErrorMapping_MigrationWrap(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := kn.MigrateUpDir(ctx, "")
+	var oe *kintsnorm.ORMError
+	if err == nil || !errors.As(err, &oe) || oe.Code != kintsnorm.ErrCodeMigration {
+		t.Fatalf("expected ErrCodeMigration for empty dir, got %#v", err)
 	}
 }
 

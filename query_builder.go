@@ -492,7 +492,7 @@ func (qb *QueryBuilder) Find(ctx context.Context, dest any) error {
 		for rows.Next() {
 			vals, err := rows.Values()
 			if err != nil {
-				return err
+				return wrapPgError(err, query, args)
 			}
 			fds := rows.FieldDescriptions()
 			m := make(map[string]any, len(vals))
@@ -502,7 +502,7 @@ func (qb *QueryBuilder) Find(ctx context.Context, dest any) error {
 			*d = append(*d, m)
 		}
 		if err := rows.Err(); err != nil {
-			return err
+			return wrapPgError(err, query, args)
 		}
 		// cache set for *[]map[string]any only for now
 		if qb.kn.cache != nil && qb.cacheKey != "" && qb.cacheTTL > 0 {
@@ -523,7 +523,7 @@ func (qb *QueryBuilder) Find(ctx context.Context, dest any) error {
 		for rows.Next() {
 			vals, err := rows.Values()
 			if err != nil {
-				return err
+				return wrapPgError(err, query, args)
 			}
 			fds := rows.FieldDescriptions()
 			elemPtr := reflect.New(elemType)
@@ -536,7 +536,7 @@ func (qb *QueryBuilder) Find(ctx context.Context, dest any) error {
 			sliceVal.Set(reflect.Append(sliceVal, elemPtr.Elem()))
 		}
 		if err := rows.Err(); err != nil {
-			return err
+			return wrapPgError(err, query, args)
 		}
 		// optional cache disabled for struct slices in minimal hook
 		return nil
