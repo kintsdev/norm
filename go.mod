@@ -1,4 +1,4 @@
-module kints-norm
+module github.com/kintsdev/norm
 
 go 1.24.5
 

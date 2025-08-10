@@ -1,4 +1,4 @@
-package kintsnorm
+package norm
 
 import (
 	"context"
@@ -87,7 +87,7 @@ func (qb *QueryBuilder) Raw(sql string, args ...any) *QueryBuilder {
 
 // WhereCond adds a typed Condition built by helpers in conditions.go
 func (qb *QueryBuilder) WhereCond(c Condition) *QueryBuilder {
-    return qb.Where(c.Expr, c.Args...)
+	return qb.Where(c.Expr, c.Args...)
 }
 
 func (qb *QueryBuilder) buildSelect() (string, []any) {
@@ -532,45 +532,62 @@ func (qb *QueryBuilder) ExecUpdate(ctx context.Context, dest any) (int64, error)
 
 // InsertStruct inserts a struct using its `db` tags. Zero values with default: tag are skipped to allow DB defaults
 func (qb *QueryBuilder) InsertStruct(ctx context.Context, entity any) (int64, error) {
-    v := reflect.Indirect(reflect.ValueOf(entity))
-    t := v.Type()
-    cols := []string{}
-    row := []any{}
-    for i := 0; i < t.NumField(); i++ {
-        f := t.Field(i)
-        if f.PkgPath != "" { continue }
-        col := f.Tag.Get("db"); if col == "" { col = toSnakeCase(f.Name) }
-        orm := f.Tag.Get("orm")
-        fv := v.Field(i)
-        if strings.Contains(orm, "default:") && fv.IsZero() { continue }
-        cols = append(cols, col)
-        row = append(row, fv.Interface())
-    }
-    return qb.Insert(cols...).Values(row...).ExecInsert(ctx, nil)
+	v := reflect.Indirect(reflect.ValueOf(entity))
+	t := v.Type()
+	cols := []string{}
+	row := []any{}
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.PkgPath != "" {
+			continue
+		}
+		col := f.Tag.Get("db")
+		if col == "" {
+			col = toSnakeCase(f.Name)
+		}
+		orm := f.Tag.Get("orm")
+		fv := v.Field(i)
+		if strings.Contains(orm, "default:") && fv.IsZero() {
+			continue
+		}
+		cols = append(cols, col)
+		row = append(row, fv.Interface())
+	}
+	return qb.Insert(cols...).Values(row...).ExecInsert(ctx, nil)
 }
 
 // UpdateStructByPK updates a row by its primary key using `db` tags
 func (qb *QueryBuilder) UpdateStructByPK(ctx context.Context, entity any, pkColumn string) (int64, error) {
-    v := reflect.Indirect(reflect.ValueOf(entity))
-    t := v.Type()
-    sets := []string{}
-    args := []any{}
-    var id any
-    for i := 0; i < t.NumField(); i++ {
-        f := t.Field(i)
-        if f.PkgPath != "" { continue }
-        col := f.Tag.Get("db"); if col == "" { col = toSnakeCase(f.Name) }
-        fv := v.Field(i).Interface()
-        if strings.EqualFold(col, pkColumn) { id = fv; continue }
-        sets = append(sets, fmt.Sprintf("%s = ?", col))
-        args = append(args, fv)
-    }
-    if id == nil { return 0, &ORMError{Code: ErrCodeValidation, Message: "missing primary key value"} }
-    qb.op = "update"
-    qb.updateSetExpr = strings.Join(sets, ", ")
-    qb.updateSetArgs = args
-    qb.Where(""+pkColumn+" = ?", id)
-    return qb.ExecUpdate(ctx, nil)
+	v := reflect.Indirect(reflect.ValueOf(entity))
+	t := v.Type()
+	sets := []string{}
+	args := []any{}
+	var id any
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.PkgPath != "" {
+			continue
+		}
+		col := f.Tag.Get("db")
+		if col == "" {
+			col = toSnakeCase(f.Name)
+		}
+		fv := v.Field(i).Interface()
+		if strings.EqualFold(col, pkColumn) {
+			id = fv
+			continue
+		}
+		sets = append(sets, fmt.Sprintf("%s = ?", col))
+		args = append(args, fv)
+	}
+	if id == nil {
+		return 0, &ORMError{Code: ErrCodeValidation, Message: "missing primary key value"}
+	}
+	qb.op = "update"
+	qb.updateSetExpr = strings.Join(sets, ", ")
+	qb.updateSetArgs = args
+	qb.Where(""+pkColumn+" = ?", id)
+	return qb.ExecUpdate(ctx, nil)
 }
 
 func (qb *QueryBuilder) buildKeysetPredicate() string {

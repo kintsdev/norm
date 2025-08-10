@@ -1,4 +1,4 @@
-package kintsnorm
+package norm
 
 type options struct {
 	logger  Logger

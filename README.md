@@ -1,4 +1,4 @@
-## kints-norm
+## norm
 
 Production-ready, PGX v5 tabanlı hafif ORM ve query builder (PostgreSQL). Bağlantı havuzu, otomatik migration, fluent query builder, generic repository, soft delete, optimistic locking, transaction yönetimi, read/write splitting, retry/backoff, ve kapsamlı e2e testleri ile gelir.
 
@@ -19,10 +19,10 @@ Not: OpenTelemetry/Prometheus entegrasyonları şimdilik kapsam dışıdır.
 ### Kurulum
 
 ```bash
-go get kints-norm
+go get github.com/kintsdev/norm
 ```
 
-Go mod klasörünüzde `kints-norm` import edin.
+Go mod klasörünüzde `github.com/kintsdev/norm` import edin.
 
 ### Hızlı Başlangıç
 
@@ -30,7 +30,7 @@ Go mod klasörünüzde `kints-norm` import edin.
 package main
 
 import (
-    kintsnorm "kints-norm"
+     "github.com/kintsdev/norm"
 )
 
 type User struct {
@@ -46,18 +46,18 @@ type User struct {
 }
 
 func main() {
-    cfg := &kintsnorm.Config{
+    cfg := &norm.Config{
         Host: "127.0.0.1", Port: 5432, Database: "postgres", User: "postgres", Password: "postgres",
         SSLMode: "disable", StatementCacheCapacity: 256,
     }
-    kn, _ := kintsnorm.New(cfg)
+    kn, _ := norm.New(cfg)
     defer kn.Close()
 
     // migrate
     _ = kn.AutoMigrate(&User{})
 
     // repository
-    repo := kintsnorm.NewRepository[User](kn)
+    repo := norm.NewRepository[User](kn)
     _ = repo.Create(context.Background(), &User{Email: "u@example.com", Username: "u", Password: "x"})
 
     // query builder

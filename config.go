@@ -1,4 +1,4 @@
-package kintsnorm
+package norm
 
 import (
 	"fmt"
@@ -7,23 +7,23 @@ import (
 
 // Config holds database and runtime configuration for Kints-Norm
 type Config struct {
-	Host               string
-	Port               int
-	Database           string
-	Username           string
-	Password           string
-	SSLMode            string
-	MaxConnections     int32
-	MinConnections     int32
-	MaxConnLifetime    time.Duration
-	MaxConnIdleTime    time.Duration
-	HealthCheckPeriod  time.Duration
-	ConnectTimeout     time.Duration
-	ApplicationName    string
-	ReadOnlyConnString string        // optional DSN for read replica(s)
-	RetryAttempts      int           // transient error retries (default 0 = no retry)
-	RetryBackoff       time.Duration // backoff between retries
-    StatementCacheCapacity int       // pgx per-conn statement cache capacity (0 = default)
+	Host                   string
+	Port                   int
+	Database               string
+	Username               string
+	Password               string
+	SSLMode                string
+	MaxConnections         int32
+	MinConnections         int32
+	MaxConnLifetime        time.Duration
+	MaxConnIdleTime        time.Duration
+	HealthCheckPeriod      time.Duration
+	ConnectTimeout         time.Duration
+	ApplicationName        string
+	ReadOnlyConnString     string        // optional DSN for read replica(s)
+	RetryAttempts          int           // transient error retries (default 0 = no retry)
+	RetryBackoff           time.Duration // backoff between retries
+	StatementCacheCapacity int           // pgx per-conn statement cache capacity (0 = default)
 }
 
 // ConnString returns a PostgreSQL connection string compatible with pgx

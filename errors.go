@@ -1,4 +1,4 @@
-package kintsnorm
+package norm
 
 import (
 	"errors"
@@ -18,7 +18,7 @@ const (
 	ErrCodeValidation
 )
 
-// ORMError is a structured error for kints-norm
+// ORMError is a structured error for norm
 type ORMError struct {
 	Code     ErrorCode
 	Message  string

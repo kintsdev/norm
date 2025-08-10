@@ -1,11 +1,11 @@
-package kintsnorm
+package norm
 
 import (
 	"context"
 	"errors"
 	"time"
 
-	"kints-norm/migration"
+	"github.com/kintsdev/norm/migration"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )

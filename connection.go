@@ -1,4 +1,4 @@
-package kintsnorm
+package norm
 
 import (
 	"context"
@@ -32,10 +32,10 @@ func newPool(ctx context.Context, cfg *Config) (*pgxpool.Pool, error) {
 	if cfg.HealthCheckPeriod > 0 {
 		conf.HealthCheckPeriod = cfg.HealthCheckPeriod
 	}
-    if cfg.StatementCacheCapacity > 0 {
-        conf.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
-        conf.ConnConfig.StatementCacheCapacity = cfg.StatementCacheCapacity
-    }
+	if cfg.StatementCacheCapacity > 0 {
+		conf.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
+		conf.ConnConfig.StatementCacheCapacity = cfg.StatementCacheCapacity
+	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, conf)
 	if err != nil {
@@ -85,30 +85,32 @@ func (kn *KintsNorm) acquireConn(ctx context.Context) (pgx.Tx, func(context.Cont
 
 // withRetry executes fn with basic retry on transient errors
 func (kn *KintsNorm) withRetry(ctx context.Context, fn func() error) error {
-    attempts := 0
-    baseBackoff := 0 * time.Millisecond
-    if kn.config != nil {
-        attempts = kn.config.RetryAttempts
-        baseBackoff = kn.config.RetryBackoff
-    }
-    if attempts <= 0 {
-        return fn()
-    }
-    var err error
-    for i := 0; i < attempts; i++ {
-        err = fn()
-        if err == nil {
-            return nil
-        }
-        if i < attempts-1 && baseBackoff > 0 {
-            // exponential backoff with jitter
-            sleep := baseBackoff << i
-            // cap to 5 seconds
-            if sleep > 5*time.Second { sleep = 5 * time.Second }
-            // simple jitter: +/- 20%
-            jitter := time.Duration(int64(sleep) * 20 / 100)
-            time.Sleep(sleep - jitter + time.Duration(int64(jitter)*int64(i%2)))
-        }
-    }
-    return err
+	attempts := 0
+	baseBackoff := 0 * time.Millisecond
+	if kn.config != nil {
+		attempts = kn.config.RetryAttempts
+		baseBackoff = kn.config.RetryBackoff
+	}
+	if attempts <= 0 {
+		return fn()
+	}
+	var err error
+	for i := 0; i < attempts; i++ {
+		err = fn()
+		if err == nil {
+			return nil
+		}
+		if i < attempts-1 && baseBackoff > 0 {
+			// exponential backoff with jitter
+			sleep := baseBackoff << i
+			// cap to 5 seconds
+			if sleep > 5*time.Second {
+				sleep = 5 * time.Second
+			}
+			// simple jitter: +/- 20%
+			jitter := time.Duration(int64(sleep) * 20 / 100)
+			time.Sleep(sleep - jitter + time.Duration(int64(jitter)*int64(i%2)))
+		}
+	}
+	return err
 }

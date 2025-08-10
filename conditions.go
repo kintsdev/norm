@@ -1,4 +1,4 @@
-package kintsnorm
+package norm
 
 import "strings"
 

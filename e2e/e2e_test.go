@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	kintsnorm "kints-norm"
-	migration "kints-norm/migration"
+	kintsnorm "github.com/kintsdev/norm"
+	migration "github.com/kintsdev/norm/migration"
 )
 
 type User struct {
