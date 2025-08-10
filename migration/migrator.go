@@ -34,6 +34,8 @@ type PlanResult struct {
 	UnsafeStatements      []string
 	Warnings              []string
 	DestructiveStatements []string
+	IndexDrops            []string
+	ConstraintDrops       []string
 }
 
 // Plan computes a safe migration plan for given models (public schema)
@@ -147,6 +149,76 @@ func (m *Migrator) Plan(ctx context.Context, models ...any) (PlanResult, error) 
 			}
 		}
 	}
+	// Index diffing: drop indexes that are not expected by model, or with wrong uniqueness
+	idxRows, err := m.pool.Query(ctx, `SELECT tablename, indexname, indexdef FROM pg_indexes WHERE schemaname='public'`)
+	if err == nil {
+		defer idxRows.Close()
+		// build expected index set by name and uniqueness
+		type idxSpec struct{ unique bool }
+		expectedIdx := map[string]idxSpec{}
+		for _, model := range models {
+			mi := parseModel(model)
+			for _, f := range mi.Fields {
+				if f.Unique {
+					expectedIdx[fmt.Sprintf("idx_%s_%s", mi.TableName, f.DBName)] = idxSpec{unique: true}
+				} else if f.Index {
+					expectedIdx[fmt.Sprintf("idx_%s_%s", mi.TableName, f.DBName)] = idxSpec{unique: false}
+				}
+			}
+		}
+		for idxRows.Next() {
+			var tbl, name, def string
+			if err := idxRows.Scan(&tbl, &name, &def); err != nil {
+				continue
+			}
+			if !strings.HasPrefix(name, "idx_") {
+				continue
+			}
+			if spec, ok := expectedIdx[name]; ok {
+				// if uniqueness mismatch, drop so it can be recreated
+				hasUnique := strings.Contains(strings.ToUpper(def), "UNIQUE INDEX")
+				if hasUnique != spec.unique {
+					plan.IndexDrops = append(plan.IndexDrops, fmt.Sprintf("DROP INDEX IF EXISTS %s", quoteIdent(name)))
+				}
+				continue
+			}
+			// unexpected index for this table -> drop
+			plan.IndexDrops = append(plan.IndexDrops, fmt.Sprintf("DROP INDEX IF EXISTS %s", quoteIdent(name)))
+		}
+	}
+
+	// Constraint diffing: drop fk_* constraints not present in model
+	crows, err2 := m.pool.Query(ctx, `
+        SELECT c.conname
+        FROM pg_constraint c
+        JOIN pg_class r ON r.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = r.relnamespace
+        WHERE n.nspname = 'public' AND c.contype IN ('f')`)
+	if err2 == nil {
+		defer crows.Close()
+		expectedFK := map[string]struct{}{}
+		for _, model := range models {
+			mi := parseModel(model)
+			for _, f := range mi.Fields {
+				if f.FKTable != "" && f.FKColumn != "" {
+					expectedFK[fmt.Sprintf("fk_%s_%s", mi.TableName, f.DBName)] = struct{}{}
+				}
+			}
+		}
+		for crows.Next() {
+			var conname string
+			if err := crows.Scan(&conname); err != nil {
+				continue
+			}
+			if !strings.HasPrefix(conname, "fk_") {
+				continue
+			}
+			if _, ok := expectedFK[conname]; !ok {
+				plan.ConstraintDrops = append(plan.ConstraintDrops, fmt.Sprintf("ALTER TABLE %%s DROP CONSTRAINT %s", quoteIdent(conname)))
+			}
+		}
+	}
+
 	return plan, nil
 }
 
@@ -193,7 +265,9 @@ func (m *Migrator) AutoMigrate(ctx context.Context, models ...any) error {
 
 // ApplyOptions controls execution of destructive statements
 type ApplyOptions struct {
-	AllowDropColumns bool
+	AllowDropColumns     bool
+	AllowDropIndexes     bool
+	AllowDropConstraints bool
 }
 
 // AutoMigrateWithOptions applies plan with additional options (e.g., allow drops)
@@ -213,7 +287,7 @@ func (m *Migrator) AutoMigrateWithOptions(ctx context.Context, opts ApplyOptions
 	if _, err := tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version BIGINT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), checksum TEXT)`); err != nil {
 		return err
 	}
-	allStmts := make([]string, 0, len(plan.Statements)+len(plan.DestructiveStatements))
+	allStmts := make([]string, 0, len(plan.Statements)+len(plan.DestructiveStatements)+len(plan.IndexDrops)+len(plan.ConstraintDrops))
 	for _, s := range plan.Statements {
 		if _, err := tx.Exec(ctx, s); err != nil {
 			return err
@@ -222,6 +296,26 @@ func (m *Migrator) AutoMigrateWithOptions(ctx context.Context, opts ApplyOptions
 	}
 	if opts.AllowDropColumns {
 		for _, s := range plan.DestructiveStatements {
+			if _, err := tx.Exec(ctx, s); err != nil {
+				return err
+			}
+			allStmts = append(allStmts, s)
+		}
+	}
+	if opts.AllowDropIndexes {
+		for _, s := range plan.IndexDrops {
+			if _, err := tx.Exec(ctx, s); err != nil {
+				return err
+			}
+			allStmts = append(allStmts, s)
+		}
+	}
+	if opts.AllowDropConstraints {
+		for _, s := range plan.ConstraintDrops {
+			// unresolved %s placeholder -> skip for safety
+			if strings.Contains(s, "%s") {
+				continue
+			}
 			if _, err := tx.Exec(ctx, s); err != nil {
 				return err
 			}

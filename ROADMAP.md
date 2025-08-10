@@ -25,7 +25,7 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [x] Rollback: down-runner with safety gates
 - [x] Drop/rename column plan (diff) with explicit opt-in guards (apply-time)
 - [ ] Table drop/rename planning (explicit opt-in)
-- [ ] Index/constraint change and drop diffing
+- [x] Index/constraint drop diffing (apply-time opt-in)
 - [ ] Detailed plan formatting (grouping by table, severity)
 
 ### Query Builder
