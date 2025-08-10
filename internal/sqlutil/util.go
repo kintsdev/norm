@@ -3,20 +3,25 @@ package sqlutil
 import (
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 )
 
 // ConvertQMarksToPgPlaceholders converts '?' placeholders to PostgreSQL-style $1, $2, ...
 func ConvertQMarksToPgPlaceholders(s string) string {
 	var sb strings.Builder
+	sb.Grow(len(s) + 8) // small headroom
 	index := 1
-	for _, r := range s {
-		if r == '?' {
-			sb.WriteString(fmt.Sprintf("$%d", index))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '?' {
+			sb.WriteByte('$')
+			// append decimal digits of index without fmt allocations
+			buf := strconv.AppendInt(nil, int64(index), 10)
+			sb.Write(buf)
 			index++
-		} else {
-			sb.WriteRune(r)
+			continue
 		}
+		sb.WriteByte(s[i])
 	}
 	return sb.String()
 }

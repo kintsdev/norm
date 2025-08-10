@@ -3,6 +3,7 @@ package core
 import (
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,10 +21,15 @@ type StructMapping struct {
 
 func ParseDBTag(tag string) string { return tag }
 
+var structMappingCache sync.Map // map[reflect.Type]StructMapping
+
 func StructMapper(t reflect.Type) StructMapping {
 	// deref pointer
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
+	}
+	if v, ok := structMappingCache.Load(t); ok {
+		return v.(StructMapping)
 	}
 	m := StructMapping{FieldsByColumn: make(map[string]StructFieldInfo)}
 	for i := 0; i < t.NumField(); i++ {
@@ -71,6 +77,7 @@ func StructMapper(t reflect.Type) StructMapping {
 			m.PrimaryColumn = col
 		}
 	}
+	structMappingCache.Store(t, m)
 	return m
 }
 
