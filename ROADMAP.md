@@ -70,7 +70,6 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 ### Security & Production
 
 - [x] SQL injection safety via parameterization
-- [ ] Secret providers for connection string (env manager, KMS)
 - [ ] Audit logging hook points
 - [ ] RLS helpers (session vars, `SET ROLE` helpers)
 
@@ -84,6 +83,4 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [ ] Lint and coverage targets; example CI workflow
 
 ### Nice-to-haves
-
-- [ ] CLI: migration plan/apply/rollback
 - [ ] Documentation site with full guides and recipes
