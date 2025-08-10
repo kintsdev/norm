@@ -72,17 +72,6 @@ func healthCheck(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
-// acquireConn provides a connection for lower-level operations
-func (kn *KintsNorm) acquireConn(ctx context.Context) (pgx.Tx, func(context.Context) error, error) {
-	// For future: support read/write splitting by context hints
-	tx, err := kn.pool.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return nil, nil, err
-	}
-	cleanup := func(c context.Context) error { return tx.Rollback(c) }
-	return tx, cleanup, nil
-}
-
 // withRetry executes fn with basic retry on transient errors
 func (kn *KintsNorm) withRetry(ctx context.Context, fn func() error) error {
 	// Circuit check is handled at executor-level; do not duplicate here
@@ -97,6 +86,13 @@ func (kn *KintsNorm) withRetry(ctx context.Context, fn func() error) error {
 	}
 	var err error
 	for i := 0; i < attempts; i++ {
+		// allow external cancellation between attempts
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		err = fn()
 		if err == nil {
 			return nil
@@ -105,12 +101,16 @@ func (kn *KintsNorm) withRetry(ctx context.Context, fn func() error) error {
 			// exponential backoff with jitter
 			sleep := baseBackoff << i
 			// cap to 5 seconds
-			if sleep > 5*time.Second {
-				sleep = 5 * time.Second
-			}
+			sleep = min(sleep, 5*time.Second)
 			// simple jitter: +/- 20%
 			jitter := time.Duration(int64(sleep) * 20 / 100)
-			time.Sleep(sleep - jitter + time.Duration(int64(jitter)*int64(i%2)))
+			delay := sleep - jitter + time.Duration(int64(jitter)*int64(i%2))
+			// respect context during backoff wait
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 	}
 	return err
