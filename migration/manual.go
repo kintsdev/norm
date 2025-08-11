@@ -15,10 +15,14 @@ import (
 var migFileRe = regexp.MustCompile(`^(\d+)_.*\.(up|down)\.sql$`)
 
 type filePair struct {
-	version int64
-	name    string
-	upSQL   string
-	downSQL string
+	version  int64
+	name     string
+	upName   string
+	downName string
+	upPath   string
+	downPath string
+	upSQL    string
+	downSQL  string
 }
 
 // MigrateUpDir applies pending .up.sql migrations from dir in ascending version order
@@ -70,7 +74,12 @@ func (m *Migrator) MigrateUpDir(ctx context.Context, dir string) error {
 		}
 		for _, stmt := range splitSQLStatements(p.upSQL) {
 			if _, err := tx.Exec(ctx, stmt); err != nil {
-				return fmt.Errorf("apply up %d failed: %w", p.version, err)
+				// include file information for easier debugging
+				file := p.upPath
+				if file == "" {
+					file = p.upName
+				}
+				return fmt.Errorf("apply up %d failed in %s: %w", p.version, file, err)
 			}
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO schema_migrations(version, checksum) VALUES($1, $2)`, p.version, computeChecksum(p.upSQL)); err != nil {
@@ -138,7 +147,12 @@ func (m *Migrator) MigrateDownDir(ctx context.Context, dir string, steps int) er
 				return fmt.Errorf("DROP COLUMN blocked by safety gate: %s", stmt)
 			}
 			if _, err := tx.Exec(ctx, stmt); err != nil {
-				return fmt.Errorf("apply down %d failed: %w", v, err)
+				// include file information for easier debugging
+				file := p.downPath
+				if file == "" {
+					file = p.downName
+				}
+				return fmt.Errorf("apply down %d failed in %s: %w", v, file, err)
 			}
 		}
 		if _, err := tx.Exec(ctx, `DELETE FROM schema_migrations WHERE version = $1`, v); err != nil {
@@ -175,8 +189,12 @@ func loadMigrationPairs(dir string) ([]filePair, error) {
 		}
 		if kind == "up" {
 			p.upSQL = string(b)
+			p.upName = name
+			p.upPath = path
 		} else {
 			p.downSQL = string(b)
+			p.downName = name
+			p.downPath = path
 		}
 		return nil
 	})
