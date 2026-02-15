@@ -11,13 +11,12 @@ import (
 func ConvertQMarksToPgPlaceholders(s string) string {
 	var sb strings.Builder
 	sb.Grow(len(s) + 8) // small headroom
+	var buf [20]byte    // stack buffer for itoa
 	index := 1
 	for i := 0; i < len(s); i++ {
 		if s[i] == '?' {
 			sb.WriteByte('$')
-			// append decimal digits of index without fmt allocations
-			buf := strconv.AppendInt(nil, int64(index), 10)
-			sb.Write(buf)
+			sb.Write(strconv.AppendInt(buf[:0], int64(index), 10))
 			index++
 			continue
 		}
@@ -93,7 +92,8 @@ func ConvertNamedToPgPlaceholders(sql string, named map[string]any) (string, []a
 						if k > 0 {
 							out.WriteString(", ")
 						}
-						out.WriteString(fmt.Sprintf("$%d", argIndex))
+						out.WriteByte('$')
+						out.WriteString(strconv.Itoa(argIndex))
 						args = append(args, rv.Index(k).Interface())
 						argIndex++
 					}
@@ -102,9 +102,11 @@ func ConvertNamedToPgPlaceholders(sql string, named map[string]any) (string, []a
 				nameToIndex[name] = -1 // mark as expanded
 			} else {
 				if idx, seen := nameToIndex[name]; seen && idx > 0 {
-					out.WriteString(fmt.Sprintf("$%d", idx))
+					out.WriteByte('$')
+					out.WriteString(strconv.Itoa(idx))
 				} else {
-					out.WriteString(fmt.Sprintf("$%d", argIndex))
+					out.WriteByte('$')
+					out.WriteString(strconv.Itoa(argIndex))
 					args = append(args, val)
 					nameToIndex[name] = argIndex
 					argIndex++
@@ -134,7 +136,8 @@ func RenumberPlaceholders(sql string, offset int) string {
 				j++
 			}
 			num, _ := strconv.Atoi(sql[i+1 : j])
-			sb.WriteString(fmt.Sprintf("$%d", num+offset))
+			sb.WriteByte('$')
+			sb.WriteString(strconv.Itoa(num + offset))
 			i = j
 		} else {
 			sb.WriteByte(sql[i])

@@ -21,13 +21,21 @@ func In(col string, vals []any) Condition {
 	if len(vals) == 0 {
 		return Condition{Expr: "1=0"}
 	}
-	placeholders := make([]string, len(vals))
 	args := make([]any, len(vals))
-	for i, v := range vals {
-		placeholders[i] = "?"
-		args[i] = v
+	copy(args, vals)
+	// Build "col IN (?, ?, ?)" without allocating a []string for placeholders
+	var sb strings.Builder
+	sb.Grow(len(col) + 5 + len(vals)*3) // col + " IN (" + "?, " per val
+	sb.WriteString(col)
+	sb.WriteString(" IN (")
+	for i := range vals {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteByte('?')
 	}
-	return Condition{Expr: col + " IN (" + strings.Join(placeholders, ", ") + ")", Args: args}
+	sb.WriteByte(')')
+	return Condition{Expr: sb.String(), Args: args}
 }
 
 func RawCond(expr string, args ...any) Condition { return Condition{Expr: expr, Args: args} }
@@ -54,24 +62,44 @@ func And(conds ...Condition) Condition {
 	if len(conds) == 0 {
 		return Condition{Expr: "1=1"}
 	}
-	exprs := make([]string, 0, len(conds))
-	args := make([]any, 0)
+	// Pre-count total args to avoid repeated grow
+	totalArgs := 0
 	for _, c := range conds {
-		exprs = append(exprs, "("+c.Expr+")")
+		totalArgs += len(c.Args)
+	}
+	args := make([]any, 0, totalArgs)
+	var sb strings.Builder
+	for i, c := range conds {
+		if i > 0 {
+			sb.WriteString(" AND ")
+		}
+		sb.WriteByte('(')
+		sb.WriteString(c.Expr)
+		sb.WriteByte(')')
 		args = append(args, c.Args...)
 	}
-	return Condition{Expr: strings.Join(exprs, " AND "), Args: args}
+	return Condition{Expr: sb.String(), Args: args}
 }
 
 func Or(conds ...Condition) Condition {
 	if len(conds) == 0 {
 		return Condition{Expr: "1=0"}
 	}
-	exprs := make([]string, 0, len(conds))
-	args := make([]any, 0)
+	// Pre-count total args to avoid repeated grow
+	totalArgs := 0
 	for _, c := range conds {
-		exprs = append(exprs, "("+c.Expr+")")
+		totalArgs += len(c.Args)
+	}
+	args := make([]any, 0, totalArgs)
+	var sb strings.Builder
+	for i, c := range conds {
+		if i > 0 {
+			sb.WriteString(" OR ")
+		}
+		sb.WriteByte('(')
+		sb.WriteString(c.Expr)
+		sb.WriteByte(')')
 		args = append(args, c.Args...)
 	}
-	return Condition{Expr: strings.Join(exprs, " OR "), Args: args}
+	return Condition{Expr: sb.String(), Args: args}
 }

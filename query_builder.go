@@ -186,7 +186,7 @@ func (qb *QueryBuilder) Select(columns ...string) *QueryBuilder {
 }
 
 func (qb *QueryBuilder) Join(table, on string) *QueryBuilder {
-	qb.joins = append(qb.joins, fmt.Sprintf("JOIN %s ON %s", table, on))
+	qb.joins = append(qb.joins, "JOIN "+table+" ON "+on)
 	return qb
 }
 
@@ -197,25 +197,25 @@ func (qb *QueryBuilder) InnerJoin(table, on string) *QueryBuilder {
 
 // LeftJoin appends a LEFT JOIN clause
 func (qb *QueryBuilder) LeftJoin(table, on string) *QueryBuilder {
-	qb.joins = append(qb.joins, fmt.Sprintf("LEFT JOIN %s ON %s", table, on))
+	qb.joins = append(qb.joins, "LEFT JOIN "+table+" ON "+on)
 	return qb
 }
 
 // RightJoin appends a RIGHT JOIN clause
 func (qb *QueryBuilder) RightJoin(table, on string) *QueryBuilder {
-	qb.joins = append(qb.joins, fmt.Sprintf("RIGHT JOIN %s ON %s", table, on))
+	qb.joins = append(qb.joins, "RIGHT JOIN "+table+" ON "+on)
 	return qb
 }
 
 // FullJoin appends a FULL JOIN clause
 func (qb *QueryBuilder) FullJoin(table, on string) *QueryBuilder {
-	qb.joins = append(qb.joins, fmt.Sprintf("FULL JOIN %s ON %s", table, on))
+	qb.joins = append(qb.joins, "FULL JOIN "+table+" ON "+on)
 	return qb
 }
 
 // CrossJoin appends a CROSS JOIN clause (no ON condition)
 func (qb *QueryBuilder) CrossJoin(table string) *QueryBuilder {
-	qb.joins = append(qb.joins, fmt.Sprintf("CROSS JOIN %s", table))
+	qb.joins = append(qb.joins, "CROSS JOIN "+table)
 	return qb
 }
 
@@ -355,10 +355,12 @@ func (qb *QueryBuilder) buildSelect() (string, []any) {
 		sb.WriteString(qb.orderBy)
 	}
 	if qb.limit > 0 {
-		sb.WriteString(fmt.Sprintf(" LIMIT %d", qb.limit))
+		sb.WriteString(" LIMIT ")
+		sb.WriteString(strconv.Itoa(qb.limit))
 	}
 	if qb.offset > 0 {
-		sb.WriteString(fmt.Sprintf(" OFFSET %d", qb.offset))
+		sb.WriteString(" OFFSET ")
+		sb.WriteString(strconv.Itoa(qb.offset))
 	}
 	return sb.String(), qb.args
 }
@@ -753,19 +755,29 @@ func (qb *QueryBuilder) buildInsert() (string, []any) {
 		sb.WriteString(")")
 	}
 	sb.WriteString(" VALUES ")
-	args := make([]any, 0)
-	argIdx := 1
-	rows := make([]string, 0, len(qb.insertRows))
+	// Pre-count total args
+	totalArgs := 0
 	for _, r := range qb.insertRows {
-		placeholders := make([]string, 0, len(r))
-		for range r {
-			placeholders = append(placeholders, fmt.Sprintf("$%d", argIdx))
+		totalArgs += len(r)
+	}
+	args := make([]any, 0, totalArgs)
+	argIdx := 1
+	for ri, r := range qb.insertRows {
+		if ri > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteByte('(')
+		for ci := range r {
+			if ci > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteByte('$')
+			sb.WriteString(strconv.Itoa(argIdx))
 			argIdx++
 		}
-		rows = append(rows, fmt.Sprintf("(%s)", strings.Join(placeholders, ", ")))
+		sb.WriteByte(')')
 		args = append(args, r...)
 	}
-	sb.WriteString(strings.Join(rows, ", "))
 	if len(qb.conflictCols) > 0 {
 		sb.WriteString(" ON CONFLICT (")
 		sb.WriteString(strings.Join(qb.conflictCols, ", "))
@@ -1075,22 +1087,33 @@ func (qb *QueryBuilder) buildKeysetPredicate() string {
 		dir = "desc"
 	}
 	// apply predicates
-	preds := []string{}
+	var sb strings.Builder
 	if qb.afterColumn != "" {
 		cmp := ">"
 		if dir == "desc" {
 			cmp = "<"
 		}
-		preds = append(preds, fmt.Sprintf("%s %s $%d", qb.afterColumn, cmp, len(qb.args)+1))
+		sb.WriteString(qb.afterColumn)
+		sb.WriteByte(' ')
+		sb.WriteString(cmp)
+		sb.WriteString(" $")
+		sb.WriteString(strconv.Itoa(len(qb.args) + 1))
 		qb.args = append(qb.args, qb.afterValue)
 	}
 	if qb.beforeColumn != "" {
+		if sb.Len() > 0 {
+			sb.WriteString(" AND ")
+		}
 		cmp := "<"
 		if dir == "desc" {
 			cmp = ">"
 		}
-		preds = append(preds, fmt.Sprintf("%s %s $%d", qb.beforeColumn, cmp, len(qb.args)+1))
+		sb.WriteString(qb.beforeColumn)
+		sb.WriteByte(' ')
+		sb.WriteString(cmp)
+		sb.WriteString(" $")
+		sb.WriteString(strconv.Itoa(len(qb.args) + 1))
 		qb.args = append(qb.args, qb.beforeValue)
 	}
-	return strings.Join(preds, " AND ")
+	return sb.String()
 }
