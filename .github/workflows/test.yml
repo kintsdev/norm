@@ -49,6 +49,34 @@ jobs:
           PGDATABASE: postgres
         run: go test ./e2e -v -count=1
 
+      - name: Run examples
+        run: |
+          set -e
+          for dir in examples/composite_unique \
+                     examples/decimal \
+                     examples/fk_actions \
+                     examples/ignore_field \
+                     examples/index_partial \
+                     examples/keyset_pagination \
+                     examples/soft_delete \
+                     examples/tx \
+                     examples/uuid; do
+            echo "=== Running $dir ==="
+            go run "./$dir"
+          done
+
+          echo "=== Running examples/main.go ==="
+          go run ./examples
+
+          echo "=== Running examples/sql_migrations ==="
+          (cd examples/sql_migrations && go run .)
+
+          echo "=== Running examples/blog (timeout 5s) ==="
+          timeout 5 go run ./examples/blog || [ $? -eq 124 ] && echo "blog: OK (timed out as expected)"
+
+          echo "=== Running examples/observability (timeout 5s) ==="
+          timeout 5 go run ./examples/observability || [ $? -eq 124 ] && echo "observability: OK (timed out as expected)"
+
       - name: Test coverage
         env:
           PGHOST: 127.0.0.1
