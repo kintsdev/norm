@@ -3,6 +3,7 @@ package norm
 import (
 	"context"
 	"errors"
+	"math/rand/v2"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -102,9 +103,9 @@ func (kn *KintsNorm) withRetry(ctx context.Context, fn func() error) error {
 			sleep := baseBackoff << i
 			// cap to 5 seconds
 			sleep = min(sleep, 5*time.Second)
-			// simple jitter: +/- 20%
-			jitter := time.Duration(int64(sleep) * 20 / 100)
-			delay := sleep - jitter + time.Duration(int64(jitter)*int64(i%2))
+			// random jitter: +/- 25%
+			jitter := time.Duration(rand.Int64N(int64(sleep) / 2))
+			delay := sleep - sleep/4 + jitter
 			// respect context during backoff wait
 			select {
 			case <-time.After(delay):

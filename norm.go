@@ -3,6 +3,7 @@ package norm
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/kintsdev/norm/migration"
@@ -57,9 +58,11 @@ func New(config *Config, opts ...Option) (*KintsNorm, error) {
 	// optional read-only pool
 	if config.ReadOnlyConnString != "" {
 		rp, rerr := newPoolFromConnString(context.Background(), config.ReadOnlyConnString)
-		if rerr == nil {
-			kn.readPool = rp
+		if rerr != nil {
+			pool.Close()
+			return nil, fmt.Errorf("read pool: %w", rerr)
 		}
+		kn.readPool = rp
 	}
 	kn.migrator = migration.NewMigrator(kn.pool)
 	// initialize circuit breaker if enabled

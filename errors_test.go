@@ -1,6 +1,7 @@
 package norm
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -39,10 +40,16 @@ func TestMapPgErrorCode(t *testing.T) {
 }
 
 func TestWrapPgError_ContextCanceled(t *testing.T) {
-	out := wrapPgError(contextCanceledErr(), "q", nil)
+	out := wrapPgError(context.Canceled, "q", nil)
 	oe, ok := out.(*ORMError)
 	if !ok || oe.Code != ErrCodeTransaction {
 		t.Fatalf("expected transaction code for context canceled, got %#v", out)
+	}
+	// also test context.DeadlineExceeded
+	out2 := wrapPgError(context.DeadlineExceeded, "q2", nil)
+	oe2, ok2 := out2.(*ORMError)
+	if !ok2 || oe2.Code != ErrCodeTransaction {
+		t.Fatalf("expected transaction code for deadline exceeded, got %#v", out2)
 	}
 }
 
@@ -60,5 +67,18 @@ func TestORMError_Error(t *testing.T) {
 	e := &ORMError{Code: ErrCodeValidation, Message: "m"}
 	if e.Error() != "m" {
 		t.Fatalf("error() not matching message")
+	}
+}
+
+func TestORMError_Unwrap(t *testing.T) {
+	inner := errors.New("inner cause")
+	e := &ORMError{Code: ErrCodeConnection, Message: "wrapped", Internal: inner}
+	if !errors.Is(e, inner) {
+		t.Fatalf("Unwrap should allow errors.Is to find the internal error")
+	}
+	// nil internal should not panic
+	e2 := &ORMError{Code: ErrCodeValidation, Message: "no internal"}
+	if e2.Unwrap() != nil {
+		t.Fatalf("Unwrap of nil internal should return nil")
 	}
 }

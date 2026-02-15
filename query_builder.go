@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -364,42 +365,35 @@ func (qb *QueryBuilder) buildSelect() (string, []any) {
 
 // addTypeCastsToPlaceholders appends ::PGTYPE to $n placeholders based on arg types when not already cast
 func addTypeCastsToPlaceholders(sql string, args []any) string {
-	out := sql
-	// Replace from highest index to lowest to avoid prefix collisions ($10 vs $1)
-	for i := len(args); i >= 1; i-- {
-		ph := fmt.Sprintf("$%d", i)
-		// scan and cast only if not already followed by '::'
-		for {
-			idx := strings.Index(out, ph)
-			if idx < 0 {
-				break
+	if len(args) == 0 {
+		return sql
+	}
+	var sb strings.Builder
+	sb.Grow(len(sql) + len(args)*12)
+	i := 0
+	for i < len(sql) {
+		if sql[i] == '$' && i+1 < len(sql) && sql[i+1] >= '1' && sql[i+1] <= '9' {
+			// parse placeholder number
+			j := i + 1
+			for j < len(sql) && sql[j] >= '0' && sql[j] <= '9' {
+				j++
 			}
-			// already cast?
-			if idx+len(ph) < len(out) && strings.HasPrefix(out[idx+len(ph):], "::") {
-				// move past this occurrence
-				out = out[:idx+len(ph)] + "" + out[idx+len(ph):]
-				// skip replacement
-				// advance search after this position
-				// Append a sentinel to avoid infinite loop; shift one char
-				nextStart := idx + len(ph)
-				rest := out[nextStart:]
-				// find next occurrence in rest
-				nidx := strings.Index(rest, ph)
-				if nidx < 0 {
-					break
-				}
-				// reconstruct to continue scan from after next occurrence
-				out = out[:nextStart] + rest
-				continue
+			num, _ := strconv.Atoi(sql[i+1 : j])
+			sb.WriteString(sql[i:j])
+			// check if already cast (followed by "::")
+			if j+1 < len(sql) && sql[j] == ':' && sql[j+1] == ':' {
+				// already has a type cast, don't add another
+			} else if num >= 1 && num <= len(args) {
+				sb.WriteString("::")
+				sb.WriteString(pgTypeForArg(args[num-1]))
 			}
-			// determine pg type
-			pgType := pgTypeForArg(args[i-1])
-			// replace this single occurrence by inserting ::type
-			out = out[:idx] + ph + "::" + pgType + out[idx+len(ph):]
-			// continue search after this inserted cast
+			i = j
+		} else {
+			sb.WriteByte(sql[i])
+			i++
 		}
 	}
-	return out
+	return sb.String()
 }
 
 func pgTypeForArg(a any) string {
@@ -778,20 +772,11 @@ func (qb *QueryBuilder) buildInsert() (string, []any) {
 		sb.WriteString(") ")
 		if qb.updateSetExpr != "" {
 			sb.WriteString("DO UPDATE SET ")
-			// convert ? to $n in set expr and append args
+			// convert ? to $n and renumber placeholders to continue after insert args
 			set := sqlutil.ConvertQMarksToPgPlaceholders(qb.updateSetExpr)
-			// We need to renumber placeholders to continue after current argIdx
-			// Simplify: assume set uses only ? placeholders; replace $1.. with proper indexes by rebuilding
-			// We'll append args and rely that set has $? style per convert function
-			// Already uses $1.. relative to set-only; offset them:
-			// naive replace: "$1"->fmt.Sprintf("$%d",start), "$2"->...
-			// To keep it simple, rebuild with current index
 			countQ := strings.Count(qb.updateSetExpr, "?")
-			replaced := set
-			for i := 1; i <= countQ; i++ {
-				replaced = strings.ReplaceAll(replaced, fmt.Sprintf("$%d", i), fmt.Sprintf("$%d", argIdx))
-				argIdx++
-			}
+			replaced := sqlutil.RenumberPlaceholders(set, argIdx-1)
+			argIdx += countQ
 			sb.WriteString(replaced)
 			args = append(args, qb.updateSetArgs...)
 		} else {
@@ -912,27 +897,17 @@ func (qb *QueryBuilder) buildUpdate() (string, []any) {
 	sb.WriteString("UPDATE ")
 	sb.WriteString(qb.table)
 	sb.WriteString(" SET ")
-	// convert and place args
+	// convert ? placeholders in SET expression to $1, $2, ...
 	set := sqlutil.ConvertQMarksToPgPlaceholders(qb.updateSetExpr)
-	// Build WHERE
 	args := make([]any, 0)
-	// Renumber $n to start at 1 for set
 	countQ := strings.Count(qb.updateSetExpr, "?")
-	replaced := set
-	for i := 1; i <= countQ; i++ {
-		replaced = strings.ReplaceAll(replaced, fmt.Sprintf("$%d", i), fmt.Sprintf("$%d", i))
-	}
-	sb.WriteString(replaced)
+	sb.WriteString(set)
 	args = append(args, qb.updateSetArgs...)
 	if len(qb.wheres) > 0 {
 		sb.WriteString(" WHERE ")
 		where := strings.Join(qb.wheres, " AND ")
-		// shift where placeholders after set args
-		setCount := countQ
-		whereConv := sqlutil.ConvertQMarksToPgPlaceholders(where)
-		for i := 1; i <= strings.Count(where, "?"); i++ {
-			whereConv = strings.ReplaceAll(whereConv, fmt.Sprintf("$%d", i), fmt.Sprintf("$%d", setCount+i))
-		}
+		// Convert ? and renumber to continue after SET placeholders (single pass, handles >9 correctly)
+		whereConv := sqlutil.RenumberPlaceholders(sqlutil.ConvertQMarksToPgPlaceholders(where), countQ)
 		sb.WriteString(whereConv)
 		args = append(args, qb.args...)
 	}

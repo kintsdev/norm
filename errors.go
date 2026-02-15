@@ -1,9 +1,9 @@
 package norm
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -35,6 +35,9 @@ type ORMError struct {
 }
 
 func (e *ORMError) Error() string { return e.Message }
+
+// Unwrap returns the internal error so errors.Is/errors.As can traverse the chain
+func (e *ORMError) Unwrap() error { return e.Internal }
 
 // pg error mapping: map common PostgreSQL errors to ORMError codes
 
@@ -99,8 +102,8 @@ func wrapPgError(err error, query string, args []any) error {
 		return err
 	}
 	var pgErr *pgconn.PgError
-	// best-effort detect context canceled without importing context
-	if strings.EqualFold(err.Error(), contextCanceledErr().Error()) {
+	// detect context cancellation / deadline exceeded
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return &ORMError{Code: ErrCodeTransaction, Message: err.Error(), Internal: err, Query: query, Args: args}
 	}
 	// pass through circuit breaker open error as connection error with message
@@ -112,6 +115,3 @@ func wrapPgError(err error, query string, args []any) error {
 	}
 	return err
 }
-
-// avoid importing context; detect cancellation by error string (best-effort)
-func contextCanceledErr() error { return errors.New("context canceled") }

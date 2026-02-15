@@ -118,6 +118,32 @@ func ConvertNamedToPgPlaceholders(sql string, named map[string]any) (string, []a
 	return out.String(), args, nil
 }
 
+// RenumberPlaceholders adds offset to all $N placeholders in a single pass,
+// correctly handling multi-digit placeholders (e.g., $10, $11).
+func RenumberPlaceholders(sql string, offset int) string {
+	if offset == 0 {
+		return sql
+	}
+	var sb strings.Builder
+	sb.Grow(len(sql) + 16)
+	i := 0
+	for i < len(sql) {
+		if sql[i] == '$' && i+1 < len(sql) && sql[i+1] >= '1' && sql[i+1] <= '9' {
+			j := i + 1
+			for j < len(sql) && sql[j] >= '0' && sql[j] <= '9' {
+				j++
+			}
+			num, _ := strconv.Atoi(sql[i+1 : j])
+			sb.WriteString(fmt.Sprintf("$%d", num+offset))
+			i = j
+		} else {
+			sb.WriteByte(sql[i])
+			i++
+		}
+	}
+	return sb.String()
+}
+
 func isIdentStart(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_'
 }

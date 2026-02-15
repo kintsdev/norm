@@ -152,6 +152,29 @@ func (r *repo[T]) Create(ctx context.Context, entity *T) error {
 }
 
 func (r *repo[T]) CreateBatch(ctx context.Context, entities []*T) error {
+	if len(entities) == 0 {
+		return nil
+	}
+	// Wrap in a transaction for atomicity when pool is available
+	if r.kn != nil && r.kn.pool != nil {
+		tx, err := r.kn.pool.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback(ctx) //nolint:errcheck
+		txExec := dbExecuter(tx)
+		if r.kn.breaker != nil {
+			txExec = breakerExecuter{kn: r.kn, exec: tx}
+		}
+		txRepo := &repo[T]{kn: r.kn, exec: txExec, mode: r.mode}
+		for _, e := range entities {
+			if err := txRepo.Create(ctx, e); err != nil {
+				return err
+			}
+		}
+		return tx.Commit(ctx)
+	}
+	// Fallback: sequential creates when pool is not directly available
 	for _, e := range entities {
 		if err := r.Create(ctx, e); err != nil {
 			return err
@@ -596,19 +619,6 @@ func (r *repo[T]) FindPage(ctx context.Context, page PageRequest, conditions ...
 // CreateCopyFrom performs bulk insert using pgx CopyFrom for high-throughput writes.
 // columns must be provided in db column names order.
 func (r *repo[T]) CreateCopyFrom(ctx context.Context, entities []*T, columns ...string) (int64, error) {
-	// Only works with pgx.Conn or pgxpool.Pool via CopyFrom; use a dedicated connection from pool
-	pool, ok := r.exec.(interface {
-		Acquire(context.Context) (*pgxv5.Conn, error)
-	})
-	if !ok {
-		return 0, &ORMError{Code: ErrCodeValidation, Message: "CopyFrom requires pool executor"}
-	}
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer conn.Close(ctx)
-
 	rows := make([][]any, 0, len(entities))
 	for _, e := range entities {
 		vals, err := r.extractValuesByColumns(e, columns)
@@ -617,6 +627,12 @@ func (r *repo[T]) CreateCopyFrom(ctx context.Context, entities []*T, columns ...
 		}
 		rows = append(rows, vals)
 	}
+	// Acquire a connection from the pool directly for CopyFrom
+	conn, err := r.kn.pool.Acquire(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Release()
 	src := pgxv5.CopyFromRows(rows)
 	n, err := conn.CopyFrom(ctx, pgxv5.Identifier{r.tableName()}, columns, src)
 	if err != nil {

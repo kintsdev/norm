@@ -17,6 +17,7 @@ type StructMapping struct {
 	PrimaryColumn  string
 	AutoIncrement  bool
 	VersionColumn  string
+	HasSoftDelete  bool
 }
 
 func ParseDBTag(tag string) string { return tag }
@@ -75,6 +76,10 @@ func StructMapper(t reflect.Type) StructMapping {
 		}
 		if strings.EqualFold(col, "id") && m.PrimaryColumn == "" {
 			m.PrimaryColumn = col
+		}
+		// detect soft-delete support
+		if strings.EqualFold(col, "deleted_at") {
+			m.HasSoftDelete = true
 		}
 	}
 	structMappingCache.Store(t, m)
@@ -211,7 +216,8 @@ func ToSnakeCase(s string) string {
 	return string(out)
 }
 
-// ModelHasSoftDelete checks if a struct has a db:"deleted_at" field
+// ModelHasSoftDelete checks if a struct has a db:"deleted_at" field.
+// Uses the cached StructMapping for efficiency.
 func ModelHasSoftDelete(t reflect.Type) bool {
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -219,18 +225,5 @@ func ModelHasSoftDelete(t reflect.Type) bool {
 	if t.Kind() != reflect.Struct {
 		return false
 	}
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		if f.PkgPath != "" {
-			continue
-		}
-		col := f.Tag.Get("db")
-		if col == "" {
-			col = ToSnakeCase(f.Name)
-		}
-		if strings.EqualFold(col, "deleted_at") {
-			return true
-		}
-	}
-	return false
+	return StructMapper(t).HasSoftDelete
 }
