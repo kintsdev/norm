@@ -1,5 +1,5 @@
 DOCKER_NAME ?= kints-pg
-POSTGRES_IMAGE ?= postgres:17.5
+POSTGRES_IMAGE ?= postgres:18.2
 POSTGRES_PORT ?= 5432
 POSTGRES_USER ?= postgres
 POSTGRES_PASSWORD ?= postgres
