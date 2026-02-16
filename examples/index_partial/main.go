@@ -11,7 +11,7 @@ import (
 // PartialIdx demonstrates partial index with index_where and using
 type PartialIdx struct {
 	ID        int64      `db:"id" norm:"primary_key,auto_increment"`
-	Email     string     `db:"email" norm:"index,using:gin,index_where:(deleted_at IS NULL)"`
+	Email     string     `db:"email" norm:"index,using:btree,index_where:(deleted_at IS NULL)"`
 	DeletedAt *time.Time `db:"deleted_at"`
 }
 
