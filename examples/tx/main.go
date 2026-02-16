@@ -19,11 +19,13 @@ func main() {
 		log.Fatal(err)
 	}
 	defer kn.Close()
-	_ = kn.AutoMigrate(&TUser{})
+	if err := kn.AutoMigrate(&TUser{}); err != nil {
+		log.Fatal(err)
+	}
 
 	// rollback example
 	_ = kn.Tx().WithTransaction(context.Background(), func(tx norm.Transaction) error {
-		if _, err := tx.Exec().Exec(context.Background(), `INSERT INTO tusers(email) VALUES ($1)`, "tx@example.com"); err != nil {
+		if _, err := tx.Exec().Exec(context.Background(), `INSERT INTO t_users(email) VALUES ($1)`, "tx@example.com"); err != nil {
 			return err
 		}
 		return &norm.ORMError{Code: norm.ErrCodeTransaction, Message: "force rollback"}
@@ -31,7 +33,7 @@ func main() {
 
 	// commit
 	if err := kn.Tx().WithTransaction(context.Background(), func(tx norm.Transaction) error {
-		if _, err := tx.Exec().Exec(context.Background(), `INSERT INTO tusers(email) VALUES ($1)`, "tx2@example.com"); err != nil {
+		if _, err := tx.Exec().Exec(context.Background(), `INSERT INTO t_users(email) VALUES ($1)`, "tx2@example.com"); err != nil {
 			return err
 		}
 		return nil
