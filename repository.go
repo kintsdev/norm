@@ -53,9 +53,15 @@ const (
 
 // NewRepository creates a new generic repository
 func NewRepository[T any](kn *KintsNorm) Repository[T] {
-	exec := dbExecuter(kn.pool)
-	if kn.breaker != nil {
-		exec = breakerExecuter{kn: kn, exec: exec}
+	var exec dbExecuter
+	// auto-route reads to readPool when configured
+	if kn.readPool != nil {
+		exec = routingExecuter{kn: kn}
+	} else {
+		exec = kn.pool
+		if kn.breaker != nil {
+			exec = breakerExecuter{kn: kn, exec: exec}
+		}
 	}
 	return &repo[T]{kn: kn, exec: exec}
 }
@@ -67,6 +73,21 @@ func NewRepositoryWithExecutor[T any](kn *KintsNorm, exec dbExecuter) Repository
 
 func (r *repo[T]) WithTrashed() Repository[T] { nr := *r; nr.mode = softModeWithTrashed; return &nr }
 func (r *repo[T]) OnlyTrashed() Repository[T] { nr := *r; nr.mode = softModeOnlyTrashed; return &nr }
+
+// audit emits an audit entry if a global audit hook is registered
+func (r *repo[T]) audit(ctx context.Context, action AuditAction, entityID any, entity any, query string, err error) {
+	if r.kn == nil || r.kn.auditHook == nil {
+		return
+	}
+	r.kn.auditHook.OnAudit(ctx, AuditEntry{
+		Action:   action,
+		Table:    r.tableName(),
+		EntityID: entityID,
+		Entity:   entity,
+		Query:    query,
+		Err:      err,
+	})
+}
 
 func (r *repo[T]) tableName() string {
 	var t T
@@ -148,6 +169,7 @@ func (r *repo[T]) Create(ctx context.Context, entity *T) error {
 			return err
 		}
 	}
+	r.audit(ctx, AuditActionCreate, nil, entity, "", nil)
 	return nil
 }
 
@@ -270,6 +292,7 @@ func (r *repo[T]) Update(ctx context.Context, entity *T) error {
 		if tag.RowsAffected() == 0 {
 			return &ORMError{Code: ErrCodeTransaction, Message: "optimistic lock conflict"}
 		}
+		r.audit(ctx, AuditActionUpdate, id, entity, query, nil)
 		return nil
 	}
 	args = append(args, id)
@@ -284,6 +307,7 @@ func (r *repo[T]) Update(ctx context.Context, entity *T) error {
 			return err
 		}
 	}
+	r.audit(ctx, AuditActionUpdate, id, entity, query, nil)
 	return nil
 }
 
@@ -344,8 +368,10 @@ func (r *repo[T]) Delete(ctx context.Context, id any) error {
 	query := fmt.Sprintf("DELETE FROM %s WHERE id = $1", r.tableName())
 	_, err := r.exec.Exec(ctx, query, id)
 	if err != nil {
+		r.audit(ctx, AuditActionDelete, id, nil, query, err)
 		return err
 	}
+	r.audit(ctx, AuditActionDelete, id, nil, query, nil)
 	if ad, ok := any(&t).(AfterDelete); ok {
 		if err := ad.AfterDelete(ctx, id); err != nil {
 			return err
@@ -377,8 +403,10 @@ func (r *repo[T]) SoftDelete(ctx context.Context, id any) error {
 	query := fmt.Sprintf("UPDATE %s SET deleted_at = NOW() WHERE id = $1", r.tableName())
 	_, err := r.exec.Exec(ctx, query, id)
 	if err != nil {
+		r.audit(ctx, AuditActionSoftDelete, id, nil, query, err)
 		return err
 	}
+	r.audit(ctx, AuditActionSoftDelete, id, nil, query, nil)
 	if asd, ok := any(&t).(AfterSoftDelete); ok {
 		if err := asd.AfterSoftDelete(ctx, id); err != nil {
 			return err
@@ -421,8 +449,10 @@ func (r *repo[T]) Restore(ctx context.Context, id any) error {
 	query := fmt.Sprintf("UPDATE %s SET deleted_at = NULL WHERE id = $1", r.tableName())
 	_, err := r.exec.Exec(ctx, query, id)
 	if err != nil {
+		r.audit(ctx, AuditActionRestore, id, nil, query, err)
 		return wrapPgError(err, query, []any{id})
 	}
+	r.audit(ctx, AuditActionRestore, id, nil, query, nil)
 	if ar, ok := any(&t).(AfterRestore); ok {
 		if err := ar.AfterRestore(ctx, id); err != nil {
 			return err
@@ -452,8 +482,10 @@ func (r *repo[T]) PurgeTrashed(ctx context.Context) (int64, error) {
 	query := fmt.Sprintf("DELETE FROM %s WHERE deleted_at IS NOT NULL", r.tableName())
 	tag, err := r.exec.Exec(ctx, query)
 	if err != nil {
+		r.audit(ctx, AuditActionPurge, nil, nil, query, err)
 		return 0, wrapPgError(err, query, nil)
 	}
+	r.audit(ctx, AuditActionPurge, nil, nil, query, nil)
 	affected := int64(tag.RowsAffected())
 	if ap, ok := any(&t).(AfterPurgeTrashed); ok {
 		if err := ap.AfterPurgeTrashed(ctx, affected); err != nil {
@@ -704,6 +736,7 @@ func (r *repo[T]) Upsert(ctx context.Context, entity *T, conflictCols []string, 
 			return err
 		}
 	}
+	r.audit(ctx, AuditActionUpsert, nil, entity, query, nil)
 	return nil
 }
 

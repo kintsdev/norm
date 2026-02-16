@@ -5,7 +5,7 @@ POSTGRES_USER ?= postgres
 POSTGRES_PASSWORD ?= postgres
 POSTGRES_DB ?= postgres
 
-.PHONY: db-up db-down db-logs db-restart test-e2e tidy bench bench-e2e test test-coverage
+.PHONY: db-up db-down db-logs db-restart test-e2e tidy bench bench-e2e test test-coverage lint
 
 db-up:
 	@echo "Starting PostgreSQL $(POSTGRES_IMAGE) on port $(POSTGRES_PORT) ..."
@@ -59,5 +59,9 @@ test-coverage:
 	@coverage=$$(go tool cover -func=coverage.out | awk '/total:/ {print $$3}' | sed 's/%//'); \
 	threshold=80; \
 	awk -v c=$$coverage -v t=$$threshold 'BEGIN { if (c+0 < t) { printf("Coverage %.1f%% is below threshold %d%%\n", c, t); exit 1 } else { printf("Coverage OK: %.1f%% (threshold %d%%)\n", c, t); exit 0 } }'
+
+lint:
+	@echo "Running golangci-lint..."
+	@golangci-lint run --timeout=5m ./...
 
 

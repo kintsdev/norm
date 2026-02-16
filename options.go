@@ -14,6 +14,8 @@ type options struct {
 	logContextFields   func(ctx context.Context) []Field
 	slowQueryThreshold time.Duration
 	maskParams         bool
+	// audit
+	auditHook AuditHook
 }
 
 type Option func(*options)
@@ -27,6 +29,7 @@ func defaultOptions() options {
 		logContextFields:   nil,
 		slowQueryThreshold: 0,
 		maskParams:         false,
+		auditHook:          nil,
 	}
 }
 
@@ -50,4 +53,9 @@ func WithSlowQueryThreshold(threshold time.Duration) Option {
 // WithLogParameterMasking masks SQL parameters in logs (hides args and avoids inlining into stmt)
 func WithLogParameterMasking(mask bool) Option {
 	return func(o *options) { o.maskParams = mask }
+}
+
+// WithAuditHook registers a global audit hook that is called after every CRUD operation
+func WithAuditHook(hook AuditHook) Option {
+	return func(o *options) { o.auditHook = hook }
 }

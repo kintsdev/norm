@@ -37,6 +37,12 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
       - name: Unit tests
         run: go test ./...
 
@@ -88,3 +94,5 @@ jobs:
           go test -coverpkg=./... ./... -coverprofile=coverage.out -covermode=atomic
           coverage=$(go tool cover -func=coverage.out | awk '/total:/ {print $3}' | sed 's/%//')
           echo "Coverage: ${coverage}%"
+          threshold=80
+          awk -v c=$coverage -v t=$threshold 'BEGIN { if (c+0 < t) { printf("Coverage %.1f%% is below threshold %d%%\n", c, t); exit 1 } else { printf("Coverage OK: %.1f%% (threshold %d%%)\n", c, t); exit 0 } }'

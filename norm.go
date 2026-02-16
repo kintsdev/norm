@@ -26,6 +26,8 @@ type KintsNorm struct {
 	logContextFields   func(ctx context.Context) []Field
 	slowQueryThreshold time.Duration
 	maskParams         bool
+	// audit logging
+	auditHook AuditHook
 }
 
 // New creates a new KintsNorm instance, initializing the pgx pool
@@ -54,6 +56,7 @@ func New(config *Config, opts ...Option) (*KintsNorm, error) {
 		logContextFields:   options.logContextFields,
 		slowQueryThreshold: options.slowQueryThreshold,
 		maskParams:         options.maskParams,
+		auditHook:          options.auditHook,
 	}
 	// optional read-only pool
 	if config.ReadOnlyConnString != "" {
@@ -102,6 +105,7 @@ func NewWithConnString(connString string, opts ...Option) (*KintsNorm, error) {
 		logContextFields:   options.logContextFields,
 		slowQueryThreshold: options.slowQueryThreshold,
 		maskParams:         options.maskParams,
+		auditHook:          options.auditHook,
 	}
 	kn.migrator = migration.NewMigrator(kn.pool)
 	return kn, nil
@@ -183,6 +187,28 @@ func (kn *KintsNorm) MigrateDownDir(ctx context.Context, dir string, steps int) 
 // SetManualMigrationOptions configures safety gates for manual file-based migrations
 func (kn *KintsNorm) SetManualMigrationOptions(opts migration.ManualOptions) {
 	kn.migrator.SetManualOptions(opts)
+}
+
+// MigrateUpGo applies pending Go-based migrations from a registry
+func (kn *KintsNorm) MigrateUpGo(ctx context.Context, registry *migration.GoMigrationRegistry) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := kn.migrator.MigrateUpGo(ctx, registry); err != nil {
+		return &ORMError{Code: ErrCodeMigration, Message: err.Error(), Internal: err}
+	}
+	return nil
+}
+
+// MigrateDownGo rolls back the last N Go-based migrations
+func (kn *KintsNorm) MigrateDownGo(ctx context.Context, registry *migration.GoMigrationRegistry, steps int) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := kn.migrator.MigrateDownGo(ctx, registry, steps); err != nil {
+		return &ORMError{Code: ErrCodeMigration, Message: err.Error(), Internal: err}
+	}
+	return nil
 }
 
 // Close gracefully closes the connection pool

@@ -21,10 +21,10 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [x] Rename detection via `norm:"rename:old_name"` (safe plan)
 - [x] Type and nullability change warnings + unsafe statements
 - [x] Manual migrations: file-based SQL (Up/Down)
-- [ ] Go-based migration helpers (functions)
+- [x] Go-based migration helpers (functions)
 - [x] Rollback: down-runner with safety gates
 - [x] Drop/rename column plan (diff) with explicit opt-in guards (apply-time)
-- [ ] Table drop/rename planning (explicit opt-in)
+- [x] Table drop/rename planning (explicit opt-in)
 - [x] Index/constraint drop diffing (apply-time opt-in)
 - [x] Detailed plan formatting (grouping by table, severity)
 
@@ -48,7 +48,7 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [x] Soft delete with default scoping (`WithTrashed`, `OnlyTrashed`, `Restore`, `PurgeTrashed`)
 - [x] Optimistic locking (`norm:"version"`)
 - [x] Transactions (`TxManager`, transaction-bound QueryBuilder)
-- [ ] Auto route read operations to read-replica pool; writes to primary
+- [x] Auto route read operations to read-replica pool; writes to primary
 - [x] Upsert helpers in repository (e2e covered)
 - [x] Eager/lazy loading helpers (e2e covered)
 
@@ -70,8 +70,8 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 ### Security & Production
 
 - [x] SQL injection safety via parameterization
-- [ ] Audit logging hook points
-- [ ] RLS helpers (session vars, `SET ROLE` helpers)
+- [x] Audit logging hook points
+- [x] RLS helpers (session vars, `SET ROLE` helpers)
 
 ### Testing & Tooling
 
@@ -79,8 +79,8 @@ This document tracks planned work. Items are grouped by area. Checked items are 
 - [x] Comprehensive e2e tests for migrations, CRUD, soft delete, tx, builder, pagination, DSL, struct ops
 - [x] Migration diff tests (rename/type/nullability) and quoting
 - [x] E2E tests for read pool via `QueryRead()`
-- [ ] E2E tests for auto read routing + retry policies (idempotency cases)
-- [ ] Lint and coverage targets; example CI workflow
+- [x] E2E tests for auto read routing + retry policies (idempotency cases)
+- [x] Lint and coverage targets; example CI workflow
 
 ### Nice-to-haves
 - [ ] Documentation site with full guides and recipes (see `docs/`)

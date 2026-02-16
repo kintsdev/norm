@@ -39,8 +39,20 @@ type fieldTag struct {
 }
 
 type modelInfo struct {
-	TableName string
-	Fields    []fieldTag
+	TableName       string
+	RenameTableFrom string // non-empty if table was renamed from old name
+	Fields          []fieldTag
+}
+
+// TableNamer can be implemented by a model to override the default table name.
+type TableNamer interface {
+	TableName() string
+}
+
+// TableRenamer can be implemented by a model to indicate a table rename.
+// When AutoMigrate detects the old table exists, it renames it to the new name.
+type TableRenamer interface {
+	RenameTableFrom() string
 }
 
 // splitTagTokens splits a tag string by commas while preserving commas inside parentheses
@@ -117,6 +129,14 @@ func parseModel(model any) modelInfo {
 		t = t.Elem()
 	}
 	mi := modelInfo{TableName: defaultTableName(t)}
+	// Allow model to override table name
+	if tn, ok := model.(TableNamer); ok {
+		mi.TableName = tn.TableName()
+	}
+	// Allow model to signal a table rename
+	if tr, ok := model.(TableRenamer); ok {
+		mi.RenameTableFrom = tr.RenameTableFrom()
+	}
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		if f.PkgPath != "" {

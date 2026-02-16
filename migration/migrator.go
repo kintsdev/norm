@@ -36,6 +36,8 @@ type PlanResult struct {
 	DestructiveStatements []string
 	IndexDrops            []string
 	ConstraintDrops       []string
+	TableDrops            []string // tables in DB but not in models (explicit opt-in to apply)
+	TableRenames          []string // table rename statements detected via model tag
 }
 
 // Plan computes a safe migration plan for given models (public schema)
@@ -96,6 +98,21 @@ func (m *Migrator) Plan(ctx context.Context, models ...any) (PlanResult, error) 
 	for _, model := range models {
 		mi := parseModel(model)
 		modelTables[mi.TableName] = struct{}{}
+
+		// Handle table rename if old name exists and new doesn't
+		if mi.RenameTableFrom != "" {
+			_, oldExists := existing[mi.RenameTableFrom]
+			_, newExists := existing[mi.TableName]
+			if oldExists && !newExists {
+				plan.TableRenames = append(plan.TableRenames, fmt.Sprintf("ALTER TABLE %s RENAME TO %s", quoteIdent(mi.RenameTableFrom), quoteIdent(mi.TableName)))
+				// update tracking so subsequent column checks work against new name
+				existing[mi.TableName] = existing[mi.RenameTableFrom]
+				delete(existing, mi.RenameTableFrom)
+			} else if oldExists && newExists {
+				plan.Warnings = append(plan.Warnings, fmt.Sprintf("both tables %s and %s exist; manual migration likely required", mi.RenameTableFrom, mi.TableName))
+			}
+		}
+
 		if _, ok := existing[mi.TableName]; !ok {
 			sqls := generateCreateTableSQL(mi)
 			// filter out ADD CONSTRAINT if exists already
@@ -179,10 +196,24 @@ func (m *Migrator) Plan(ctx context.Context, models ...any) (PlanResult, error) 
 			plan.Statements = append(plan.Statements, filtered...)
 		}
 	}
+	// destructive: detect tables in DB but not in any model (opt-in apply)
+	// system tables like schema_migrations are excluded
+	systemTables := map[string]struct{}{"schema_migrations": {}}
+	for tbl := range existing {
+		if _, ok := modelTables[tbl]; ok {
+			continue
+		}
+		if _, ok := systemTables[tbl]; ok {
+			continue
+		}
+		plan.TableDrops = append(plan.TableDrops, fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE", quoteIdent(tbl)))
+		plan.Warnings = append(plan.Warnings, fmt.Sprintf("table %s exists in database but not in models; would be dropped with opt-in", tbl))
+	}
+
 	// destructive: drop columns that exist in DB but not in model (opt-in apply)
 	for tbl, cols := range existing {
 		if _, ok := modelTables[tbl]; !ok {
-			continue // we do not drop entire tables via auto plan
+			continue
 		}
 		// build set of expected columns from model
 		expected := map[string]struct{}{}
@@ -292,7 +323,14 @@ func (m *Migrator) AutoMigrate(ctx context.Context, models ...any) error {
 	if _, err := tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version BIGINT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), checksum TEXT)`); err != nil {
 		return err
 	}
-	allStmts := make([]string, 0, len(plan.Statements))
+	allStmts := make([]string, 0, len(plan.Statements)+len(plan.TableRenames))
+	// apply table renames first (safe, explicit via model interface)
+	for _, s := range plan.TableRenames {
+		if _, err := tx.Exec(ctx, s); err != nil {
+			return err
+		}
+		allStmts = append(allStmts, s)
+	}
 	for _, s := range plan.Statements {
 		if _, err := tx.Exec(ctx, s); err != nil {
 			return err
@@ -321,6 +359,7 @@ type ApplyOptions struct {
 	AllowDropColumns     bool
 	AllowDropIndexes     bool
 	AllowDropConstraints bool
+	AllowDropTables      bool
 }
 
 // AutoMigrateWithOptions applies plan with additional options (e.g., allow drops)
@@ -340,7 +379,14 @@ func (m *Migrator) AutoMigrateWithOptions(ctx context.Context, opts ApplyOptions
 	if _, err := tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version BIGINT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), checksum TEXT)`); err != nil {
 		return err
 	}
-	allStmts := make([]string, 0, len(plan.Statements)+len(plan.DestructiveStatements)+len(plan.IndexDrops)+len(plan.ConstraintDrops))
+	allStmts := make([]string, 0, len(plan.Statements)+len(plan.DestructiveStatements)+len(plan.IndexDrops)+len(plan.ConstraintDrops)+len(plan.TableRenames)+len(plan.TableDrops))
+	// apply table renames first (safe, explicit via model interface)
+	for _, s := range plan.TableRenames {
+		if _, err := tx.Exec(ctx, s); err != nil {
+			return err
+		}
+		allStmts = append(allStmts, s)
+	}
 	for _, s := range plan.Statements {
 		if _, err := tx.Exec(ctx, s); err != nil {
 			return err
@@ -369,6 +415,14 @@ func (m *Migrator) AutoMigrateWithOptions(ctx context.Context, opts ApplyOptions
 			if strings.Contains(s, "%s") {
 				continue
 			}
+			if _, err := tx.Exec(ctx, s); err != nil {
+				return err
+			}
+			allStmts = append(allStmts, s)
+		}
+	}
+	if opts.AllowDropTables {
+		for _, s := range plan.TableDrops {
 			if _, err := tx.Exec(ctx, s); err != nil {
 				return err
 			}

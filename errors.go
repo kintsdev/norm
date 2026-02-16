@@ -23,6 +23,7 @@ const (
 	ErrCodeInvalidFunction
 	ErrCodeInvalidCast
 	ErrCodeStringTooLong
+	ErrCodeInternal
 )
 
 // ORMError is a structured error for norm
