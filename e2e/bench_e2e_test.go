@@ -33,7 +33,7 @@ func BenchmarkE2E_FindPage(b *testing.B) {
 	_, _ = kn.Pool().Exec(ctx, "TRUNCATE users RESTART IDENTITY CASCADE")
 	repo := kintsnorm.NewRepository[User](kn)
 	// seed 200 users
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		_ = repo.Create(ctx, &User{Email: fmt.Sprintf("p%04d@example.com", i), Username: fmt.Sprintf("p%04d", i), Password: "x", IsActive: i%2 == 0})
 	}
 	pr := kintsnorm.PageRequest{Limit: 25, Offset: 50, OrderBy: "id DESC"}
@@ -75,7 +75,7 @@ func BenchmarkE2E_CopyFrom(b *testing.B) {
 	batchSize := 500
 	mkBatch := func(start int) []*User {
 		out := make([]*User, 0, batchSize)
-		for i := 0; i < batchSize; i++ {
+		for i := range batchSize {
 			idx := start + i
 			out = append(out, &User{Email: fmt.Sprintf("cf%08d@example.com", idx), Username: fmt.Sprintf("cf%08d", idx), Password: "pw"})
 		}

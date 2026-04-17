@@ -172,7 +172,7 @@ func (qb *QueryBuilder) Model(model any) *QueryBuilder {
 	if t == nil {
 		return qb
 	}
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	qb.table = core.ToSnakeCase(t.Name()) + "s"
@@ -510,7 +510,7 @@ func (qb *QueryBuilder) Find(ctx context.Context, dest any) error {
 	default:
 		// reflection-based slice of structs
 		rv := reflect.ValueOf(dest)
-		if rv.Kind() != reflect.Ptr || rv.Elem().Kind() != reflect.Slice {
+		if rv.Kind() != reflect.Pointer || rv.Elem().Kind() != reflect.Slice {
 			return &ORMError{Code: ErrCodeValidation, Message: "dest must be pointer to slice"}
 		}
 		sliceVal := rv.Elem()
@@ -544,7 +544,7 @@ func (qb *QueryBuilder) First(ctx context.Context, dest any) error {
 	qb.limit = 1
 	// If dest is pointer to struct, we scan into slice then copy
 	rv := reflect.ValueOf(dest)
-	if rv.Kind() == reflect.Ptr && rv.Elem().Kind() == reflect.Struct {
+	if rv.Kind() == reflect.Pointer && rv.Elem().Kind() == reflect.Struct {
 		// create a slice of the struct type
 		sliceType := reflect.SliceOf(rv.Elem().Type())
 		tmp := reflect.New(sliceType).Interface()

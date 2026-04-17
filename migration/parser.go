@@ -117,7 +117,7 @@ func toSnakeCase(s string) string {
 }
 
 func defaultTableName(t reflect.Type) string {
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	return toSnakeCase(t.Name()) + "s"
@@ -125,7 +125,7 @@ func defaultTableName(t reflect.Type) string {
 
 func parseModel(model any) modelInfo {
 	t := reflect.TypeOf(model)
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	mi := modelInfo{TableName: defaultTableName(t)}
@@ -137,8 +137,8 @@ func parseModel(model any) modelInfo {
 	if tr, ok := model.(TableRenamer); ok {
 		mi.RenameTableFrom = tr.RenameTableFrom()
 	}
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
+	for f := range t.Fields() {
+		f := f
 		if f.PkgPath != "" {
 			continue
 		}
@@ -151,7 +151,7 @@ func parseModel(model any) modelInfo {
 		if orm == "" {
 			orm = f.Tag.Get("orm")
 		}
-		ft := fieldTag{Name: f.Name, DBName: db, DBType: mapGoTypeToPgType(f.Type, orm), IsPointer: f.Type.Kind() == reflect.Ptr}
+		ft := fieldTag{Name: f.Name, DBName: db, DBType: mapGoTypeToPgType(f.Type, orm), IsPointer: f.Type.Kind() == reflect.Pointer}
 		if orm != "" {
 			tokens := splitTagTokens(orm)
 			// ignore handling
@@ -243,7 +243,7 @@ func parseModel(model any) modelInfo {
 
 func mapGoTypeToPgType(t reflect.Type, ormTag string) string {
 	// strip pointer
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	switch t.Kind() {
@@ -273,7 +273,7 @@ func mapGoTypeToPgType(t reflect.Type, ormTag string) string {
 		}
 		return "TEXT"
 	case reflect.Struct:
-		if t == reflect.TypeOf(time.Time{}) {
+		if t == reflect.TypeFor[time.Time]() {
 			return "TIMESTAMPTZ"
 		}
 		// Heuristic: common UUID struct types from popular packages

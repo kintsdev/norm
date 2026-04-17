@@ -3,6 +3,7 @@ package norm
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	core "github.com/kintsdev/norm/internal/core"
@@ -32,7 +33,7 @@ func BenchmarkSQLUtilConvertPlaceholders(b *testing.B) {
 
 // BenchmarkStructMapper measures reflection-based struct mapping cache/build cost.
 func BenchmarkStructMapper(b *testing.B) {
-	tp := reflect.TypeOf(benchUser{})
+	tp := reflect.TypeFor[benchUser]()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		_ = core.StructMapper(tp)
@@ -115,7 +116,7 @@ func BenchmarkConditionDSLCompose10(b *testing.B) {
 // BenchmarkRepoOnUpdateNowColumns measures discovery of on_update:now() columns via tags.
 func BenchmarkRepoOnUpdateNowColumns(b *testing.B) {
 	r := &repo[benchUser]{}
-	typ := reflect.TypeOf(benchUser{})
+	typ := reflect.TypeFor[benchUser]()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		_ = r.onUpdateNowColumns(typ)
@@ -136,13 +137,14 @@ func BenchmarkRepoExtractValuesByColumns(b *testing.B) {
 // BenchmarkSQLUtilConvertPlaceholdersHuge measures conversion cost on a much larger SQL string.
 func BenchmarkSQLUtilConvertPlaceholdersHuge(b *testing.B) {
 	base := "SELECT * FROM t WHERE a=? AND b=? AND c=? AND d=? AND e=? AND f=? AND g=? AND h=? AND i=? AND j=?"
-	long := base
-	for i := 0; i < 8; i++ { // expand to a longer query
-		long += " UNION ALL " + base
+	var long strings.Builder
+	long.WriteString(base)
+	for range 8 { // expand to a longer query
+		long.WriteString(" UNION ALL " + base)
 	}
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = sqlutil.ConvertQMarksToPgPlaceholders(long)
+		_ = sqlutil.ConvertQMarksToPgPlaceholders(long.String())
 	}
 }
 

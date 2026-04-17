@@ -14,7 +14,7 @@ type smUser struct {
 }
 
 func TestStructMapper_PrimaryAndVersion(t *testing.T) {
-	m := StructMapper(reflect.TypeOf(smUser{}))
+	m := StructMapper(reflect.TypeFor[smUser]())
 	if m.PrimaryColumn != "id" || !m.AutoIncrement || m.VersionColumn != "version" {
 		t.Fatalf("mapper unexpected: %+v", m)
 	}
@@ -40,7 +40,12 @@ func TestSetFieldByIndexAndModelHasSoftDelete(t *testing.T) {
 		Ptr       *int       `db:"ptr"`
 		DeletedAt *time.Time `db:"deleted_at"`
 	}
-	m := StructMapper(reflect.TypeOf(u))
+	m := StructMapper(reflect.TypeFor[struct {
+		Name      string     "db:\"name\""
+		When      time.Time  "db:\"when\""
+		Ptr       *int       "db:\"ptr\""
+		DeletedAt *time.Time "db:\"deleted_at\""
+	}]())
 	// set string
 	fi := m.FieldsByColumn["name"]
 	SetFieldByIndex(reflect.ValueOf(&u), fi.Index, "alice")
@@ -60,7 +65,12 @@ func TestSetFieldByIndexAndModelHasSoftDelete(t *testing.T) {
 	if u.Ptr != nil {
 		t.Fatalf("nil pointer expected")
 	}
-	if !ModelHasSoftDelete(reflect.TypeOf(u)) {
+	if !ModelHasSoftDelete(reflect.TypeFor[struct {
+		Name      string     "db:\"name\""
+		When      time.Time  "db:\"when\""
+		Ptr       *int       "db:\"ptr\""
+		DeletedAt *time.Time "db:\"deleted_at\""
+	}]()) {
 		t.Fatalf("soft delete detect")
 	}
 }

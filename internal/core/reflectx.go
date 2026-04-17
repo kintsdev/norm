@@ -26,15 +26,15 @@ var structMappingCache sync.Map // map[reflect.Type]StructMapping
 
 func StructMapper(t reflect.Type) StructMapping {
 	// deref pointer
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if v, ok := structMappingCache.Load(t); ok {
 		return v.(StructMapping)
 	}
 	m := StructMapping{FieldsByColumn: make(map[string]StructFieldInfo)}
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
+	for f := range t.Fields() {
+		f := f
 		if f.PkgPath != "" { // unexported
 			continue
 		}
@@ -60,8 +60,8 @@ func StructMapper(t reflect.Type) StructMapping {
 			m.FieldsByColumn[strings.ToLower(col)] = StructFieldInfo{Index: f.Index, Name: f.Name}
 		}
 		if orm != "" {
-			parts := strings.Split(orm, ",")
-			for _, p := range parts {
+			parts := strings.SplitSeq(orm, ",")
+			for p := range parts {
 				p = strings.TrimSpace(p)
 				if p == "primary_key" {
 					m.PrimaryColumn = col
@@ -88,7 +88,7 @@ func StructMapper(t reflect.Type) StructMapping {
 
 func SetFieldByIndex(v reflect.Value, index []int, value any) {
 	// ensure addressable
-	for v.Kind() == reflect.Ptr {
+	for v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			v.Set(reflect.New(v.Type().Elem()))
 		}
@@ -101,13 +101,13 @@ func SetFieldByIndex(v reflect.Value, index []int, value any) {
 	val := reflect.ValueOf(value)
 	if value == nil {
 		// set zero if pointer or nullable
-		if fv.Kind() == reflect.Ptr {
+		if fv.Kind() == reflect.Pointer {
 			fv.Set(reflect.Zero(fv.Type()))
 		}
 		return
 	}
 	// Special-case time parsing for TIMESTAMPTZ to time.Time
-	if fv.Type() == reflect.TypeOf(time.Time{}) {
+	if fv.Type() == reflect.TypeFor[time.Time]() {
 		switch t := value.(type) {
 		case time.Time:
 			fv.Set(reflect.ValueOf(t))
@@ -144,7 +144,7 @@ func SetFieldByIndex(v reflect.Value, index []int, value any) {
 				pos += 2
 			}
 			dashes := map[int]bool{8: true, 13: true, 18: true, 23: true}
-			for i := 0; i < 16; i++ {
+			for i := range 16 {
 				if dashes[pos] {
 					out[pos] = '-'
 					pos++
@@ -168,7 +168,7 @@ func SetFieldByIndex(v reflect.Value, index []int, value any) {
 			out := make([]byte, 36)
 			pos := 0
 			dashes := map[int]bool{8: true, 13: true, 18: true, 23: true}
-			for i := 0; i < 16; i++ {
+			for i := range 16 {
 				if dashes[pos] {
 					out[pos] = '-'
 					pos++
@@ -193,7 +193,7 @@ func SetFieldByIndex(v reflect.Value, index []int, value any) {
 		}
 	}
 	// handle pointer targets
-	if fv.Kind() == reflect.Ptr && val.Type().AssignableTo(fv.Type().Elem()) {
+	if fv.Kind() == reflect.Pointer && val.Type().AssignableTo(fv.Type().Elem()) {
 		p := reflect.New(fv.Type().Elem())
 		p.Elem().Set(val)
 		fv.Set(p)
@@ -219,7 +219,7 @@ func ToSnakeCase(s string) string {
 // ModelHasSoftDelete checks if a struct has a db:"deleted_at" field.
 // Uses the cached StructMapping for efficiency.
 func ModelHasSoftDelete(t reflect.Type) bool {
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {

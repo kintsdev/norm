@@ -5,6 +5,7 @@ import (
 	"errors"
 	"expvar"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -605,7 +606,7 @@ func TestQueryBuilderJoinsPaginationRawAndTimeout(t *testing.T) {
 	repoU := kintsnorm.NewRepository[User](kn)
 	// batch create
 	batch := []*User{}
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		batch = append(batch, &User{Email: fmt.Sprintf("u%02d@example.com", i), Username: fmt.Sprintf("u%02d", i), Password: "pw", IsActive: i%2 == 0})
 	}
 	if err := repoU.CreateBatch(ctx, batch); err != nil {
@@ -984,7 +985,7 @@ func TestKeysetPaginationAfterBefore(t *testing.T) {
 	defer cancel()
 	_, _ = kn.Pool().Exec(ctx, "TRUNCATE users RESTART IDENTITY CASCADE")
 	// seed 10
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		_, _ = kn.Pool().Exec(ctx, "INSERT INTO users(email, username, password) VALUES ($1,$2,$3)", fmt.Sprintf("k%02d@example.com", i), fmt.Sprintf("k%02d", i), "x")
 	}
 	// page forward after id=3
@@ -1011,7 +1012,7 @@ func TestRepositoryFindPageWithOrderingAndScopes(t *testing.T) {
 	_, _ = kn.Pool().Exec(ctx, "TRUNCATE users RESTART IDENTITY CASCADE")
 	repo := kintsnorm.NewRepository[User](kn)
 	// seed 12 users
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		_ = repo.Create(ctx, &User{Email: fmt.Sprintf("p%02d@example.com", i), Username: fmt.Sprintf("p%02d", i), Password: "x"})
 	}
 	// soft delete a few
@@ -1062,7 +1063,7 @@ func TestCommonScopesDateRangeAndOnDate(t *testing.T) {
 
 	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	// create users with spaced created_at using raw insert to control timestamps
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		ts := base.Add(time.Duration(i) * 24 * time.Hour)
 		// id and created_at explicit
 		if _, err := kn.Pool().Exec(ctx, `INSERT INTO users(id, email, username, password, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$5)`, int64(i+1), fmt.Sprintf("d%02d@example.com", i), fmt.Sprintf("d%02d", i), "x", ts); err != nil {
@@ -1096,7 +1097,7 @@ func TestPaginationOrderingAndOffsetEdge(t *testing.T) {
 	defer cancel()
 	_, _ = kn.Pool().Exec(ctx, "TRUNCATE users RESTART IDENTITY CASCADE")
 	repo := kintsnorm.NewRepository[User](kn)
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		_ = repo.Create(ctx, &User{Email: fmt.Sprintf("o%02d@example.com", i), Username: fmt.Sprintf("o%02d", i), Password: "x"})
 	}
 	// DESC order page
@@ -1124,7 +1125,7 @@ func TestRestoreAndPurgeTrashed(t *testing.T) {
 	defer cancel()
 	_, _ = kn.Pool().Exec(ctx, "TRUNCATE users RESTART IDENTITY CASCADE")
 	repo := kintsnorm.NewRepository[User](kn)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		_ = repo.Create(ctx, &User{Email: fmt.Sprintf("r%02d@example.com", i), Username: fmt.Sprintf("r%02d", i), Password: "x"})
 	}
 	_ = repo.SoftDelete(ctx, 2)
@@ -1869,9 +1870,7 @@ func (m *memCache) Get(ctx context.Context, key string) ([]byte, bool, error) {
 func (m *memCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 	old := m.store.Load().(map[string][]byte)
 	cp := make(map[string][]byte, len(old)+1)
-	for k, v := range old {
-		cp[k] = v
-	}
+	maps.Copy(cp, old)
 	cp[key] = value
 	m.store.Store(cp)
 	return nil
@@ -1879,9 +1878,7 @@ func (m *memCache) Set(ctx context.Context, key string, value []byte, ttl time.D
 func (m *memCache) Invalidate(ctx context.Context, keys ...string) error {
 	old := m.store.Load().(map[string][]byte)
 	cp := make(map[string][]byte, len(old))
-	for k, v := range old {
-		cp[k] = v
-	}
+	maps.Copy(cp, old)
 	for _, k := range keys {
 		delete(cp, k)
 	}

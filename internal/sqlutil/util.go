@@ -88,7 +88,7 @@ func ConvertNamedToPgPlaceholders(sql string, named map[string]any) (string, []a
 					out.WriteString("(NULL)")
 				} else {
 					out.WriteByte('(')
-					for k := 0; k < ln; k++ {
+					for k := range ln {
 						if k > 0 {
 							out.WriteString(", ")
 						}

@@ -21,7 +21,7 @@ func TestRepo_TableName(t *testing.T) {
 
 func TestRepo_OnUpdateNowColumns(t *testing.T) {
 	r := &repo[repoUser]{}
-	cols := r.onUpdateNowColumns(reflect.TypeOf(repoUser{}))
+	cols := r.onUpdateNowColumns(reflect.TypeFor[repoUser]())
 	if !cols["updated_at"] {
 		t.Fatalf("expected updated_at")
 	}

@@ -92,7 +92,7 @@ func (r *repo[T]) audit(ctx context.Context, action AuditAction, entityID any, e
 func (r *repo[T]) tableName() string {
 	var t T
 	typ := reflect.TypeOf(t)
-	for typ.Kind() == reflect.Ptr {
+	for typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
 	}
 	return core.ToSnakeCase(typ.Name()) + "s"
@@ -315,7 +315,7 @@ func (r *repo[T]) UpdatePartial(ctx context.Context, id any, fields map[string]a
 	// discover on_update:now() columns for T
 	var t T
 	typ := reflect.TypeOf(t)
-	for typ.Kind() == reflect.Ptr {
+	for typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
 	}
 	onUpdateNow := r.onUpdateNowColumns(typ)
@@ -742,12 +742,11 @@ func (r *repo[T]) Upsert(ctx context.Context, entity *T, conflictCols []string, 
 
 // onUpdateNowColumns returns a set of db column names that have orm tag on_update:now()
 func (r *repo[T]) onUpdateNowColumns(typ reflect.Type) map[string]bool {
-	for typ.Kind() == reflect.Ptr {
+	for typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
 	}
 	out := make(map[string]bool)
-	for i := 0; i < typ.NumField(); i++ {
-		f := typ.Field(i)
+	for f := range typ.Fields() {
 		if f.PkgPath != "" {
 			continue
 		}
@@ -763,8 +762,8 @@ func (r *repo[T]) onUpdateNowColumns(typ reflect.Type) map[string]bool {
 		if orm == "" {
 			continue
 		}
-		parts := strings.Split(orm, ",")
-		for _, p := range parts {
+		parts := strings.SplitSeq(orm, ",")
+		for p := range parts {
 			p = strings.TrimSpace(p)
 			if strings.EqualFold(p, "on_update:now()") {
 				col := f.Tag.Get("db")
