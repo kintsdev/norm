@@ -47,7 +47,7 @@ func TestRepo_UpdatePartial_SQL(t *testing.T) {
 	rex := &recExec2{}
 	r := &repo[rUser]{kn: kn, exec: rex}
 	_ = r.UpdatePartial(context.Background(), int64(1), map[string]any{"name": "b"})
-	if rex.lastSQL == "" {
-		t.Fatalf("no sql")
+	if rex.lastSQL != "UPDATE r_users SET \"name\" = $1 WHERE \"id\" = $2" {
+		t.Fatalf("sql=%s", rex.lastSQL)
 	}
 }

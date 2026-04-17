@@ -2,6 +2,8 @@
 
 Generic CRUD with soft delete, pagination, upsert, and bulk insert via CopyFrom.
 
+`UpdatePartial`, `Upsert`, `CreateCopyFrom`, and struct-tag-driven CRUD APIs treat column names as identifiers. Keep those names static in application code; values should still come from placeholders or map values, not string-built SQL.
+
 ```go
 type User struct { /* fields with db/norm tags */ }
 

@@ -2,6 +2,8 @@
 
 Production-ready, lightweight ORM and query builder for PostgreSQL on top of PGX v5. Ships with connection pooling, automatic migrations from struct tags, a fluent query builder, generic repository, soft delete, optimistic locking, transactions, read/write splitting, retry/backoff, a circuit breaker, and comprehensive e2e tests.
 
+`QueryBuilder` instances are mutable and not goroutine-safe. Create a fresh builder per query chain.
+
 ### Features
 
 - Fast, reliable connections via PGX v5 (`pgxpool`)
@@ -17,6 +19,8 @@ Production-ready, lightweight ORM and query builder for PostgreSQL on top of PGX
 - Circuit Breaker: optional open/half-open/closed with metrics hooks
 
 Note: OpenTelemetry/Prometheus integrations are not included yet.
+
+Safety note: `Table`, `Join`, `OrderBy`, `Set`, and `Raw` accept SQL fragments and should only receive trusted application SQL. Identifier-oriented helpers like `TableQ`, `SelectQ`, and repository reflection paths quote identifiers automatically, but values should still be passed through placeholders.
 
 ### Install
 

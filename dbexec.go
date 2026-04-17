@@ -2,6 +2,7 @@ package norm
 
 import (
 	"context"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -51,7 +52,7 @@ func (b breakerExecuter) QueryRow(ctx context.Context, sql string, args ...any) 
 			return errorRow{err: err}
 		}
 		row := b.exec.QueryRow(ctx, sql, args...)
-		return rowWithAfter{Row: row, after: func(err error) { br.after(err) }}
+		return &rowWithAfter{Row: row, after: func(err error) { br.after(err) }}
 	}
 	return b.exec.QueryRow(ctx, sql, args...)
 }
@@ -65,13 +66,16 @@ func (e errorRow) Scan(dest ...any) error { return e.err }
 type rowWithAfter struct {
 	pgx.Row
 	after func(error)
+	once  sync.Once
 }
 
-func (r rowWithAfter) Scan(dest ...any) error {
+func (r *rowWithAfter) Scan(dest ...any) error {
 	err := r.Row.Scan(dest...)
-	if r.after != nil {
-		r.after(err)
-	}
+	r.once.Do(func() {
+		if r.after != nil {
+			r.after(err)
+		}
+	})
 	return err
 }
 
@@ -111,7 +115,7 @@ func (r routingExecuter) QueryRow(ctx context.Context, sql string, args ...any) 
 			return errorRow{err: err}
 		}
 		row := exec.QueryRow(ctx, sql, args...)
-		return rowWithAfter{Row: row, after: func(err error) { br.after(err) }}
+		return &rowWithAfter{Row: row, after: func(err error) { br.after(err) }}
 	}
 	return exec.QueryRow(ctx, sql, args...)
 }

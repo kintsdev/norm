@@ -35,8 +35,8 @@ func TestRepository_Update_SQL(t *testing.T) {
 	ex := &recExecRepo{}
 	r := &repo[repUser]{kn: kn, exec: ex}
 	_ = r.Update(context.Background(), &repUser{ID: 1, Name: "a", Version: 3})
-	if ex.lastSQL == "" {
-		t.Fatalf("no sql")
+	if ex.lastSQL != "UPDATE rep_users SET \"name\" = $1, \"version\" = \"version\" + 1 WHERE \"id\" = $2 AND \"version\" = $3" {
+		t.Fatalf("sql=%s", ex.lastSQL)
 	}
 }
 
@@ -45,8 +45,8 @@ func TestRepository_Upsert_SQL(t *testing.T) {
 	ex := &recExecRepo{}
 	r := &repo[repUser]{kn: kn, exec: ex}
 	_ = r.Upsert(context.Background(), &repUser{ID: 1, Name: "a"}, []string{"id"}, []string{"name"})
-	if ex.lastSQL == "" {
-		t.Fatalf("no sql")
+	if ex.lastSQL != "INSERT INTO rep_users (\"name\", \"version\") VALUES ($1, $2) ON CONFLICT (\"id\") DO UPDATE SET \"name\" = EXCLUDED.\"name\"" {
+		t.Fatalf("sql=%s", ex.lastSQL)
 	}
 }
 

@@ -135,11 +135,18 @@ func TestKeysetPredicate(t *testing.T) {
 	kn := &KintsNorm{}
 	qb := (&QueryBuilder{kn: kn}).Table("t").OrderBy("id ASC").After("id", 10).Before("id", 20)
 	sql, args := qb.buildSelect()
-	if sql != "SELECT * FROM t WHERE id > $1 AND id < $2 ORDER BY id ASC" {
+	if sql != "SELECT * FROM t WHERE \"id\" > $1 AND \"id\" < $2 ORDER BY id ASC" {
 		t.Fatalf("keyset: %s", sql)
 	}
 	if len(args) != 2 || args[0] != 10 || args[1] != 20 {
 		t.Fatalf("args")
+	}
+	sql2, args2 := qb.buildSelect()
+	if sql2 != sql {
+		t.Fatalf("second build changed sql: %s", sql2)
+	}
+	if len(args2) != 2 || args2[0] != 10 || args2[1] != 20 {
+		t.Fatalf("second build changed args: %#v", args2)
 	}
 }
 
@@ -158,10 +165,32 @@ func TestFirstNotFoundAndLastRequiresOrder(t *testing.T) {
 	}
 }
 
-func TestRawNamed_FallbackOnError(t *testing.T) {
+func TestRawNamed_StoresValidationError(t *testing.T) {
 	kn := &KintsNorm{}
 	qb := (&QueryBuilder{kn: kn}).RawNamed("select * from t where id = :id and x = :missing", map[string]any{"id": 1})
-	if qb.raw != "select * from t where id = :id and x = :missing" || !qb.isRaw {
-		t.Fatalf("raw named fallback not set")
+	if qb.queryError() == nil {
+		t.Fatalf("expected validation error")
+	}
+	f := &fakeExec{}
+	qb.exec = f
+	if err := qb.Exec(context.Background()); err == nil {
+		t.Fatalf("expected exec to fail")
+	}
+	if f.lastSQL != "" {
+		t.Fatalf("unexpected execution: %s", f.lastSQL)
+	}
+}
+
+func TestWhereNamed_StoresValidationError(t *testing.T) {
+	kn := &KintsNorm{}
+	qb := (&QueryBuilder{kn: kn}).Table("users").WhereNamed("id = :missing", map[string]any{"id": 1})
+	f := &fakeExec{}
+	qb.exec = f
+	var out []map[string]any
+	if err := qb.Find(context.Background(), &out); err == nil {
+		t.Fatalf("expected find to fail")
+	}
+	if f.lastSQL != "" {
+		t.Fatalf("unexpected execution: %s", f.lastSQL)
 	}
 }

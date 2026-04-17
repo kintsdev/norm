@@ -51,6 +51,7 @@ type QueryBuilder struct {
 	// soft delete scoping
 	qbSoftMode         qbSoftDeleteMode
 	modelHasSoftDelete bool
+	err                error
 }
 
 // qbSoftDeleteMode controls soft-delete scoping for QueryBuilder
@@ -229,8 +230,7 @@ func (qb *QueryBuilder) Where(condition string, args ...any) *QueryBuilder {
 func (qb *QueryBuilder) WhereNamed(condition string, namedArgs map[string]any) *QueryBuilder {
 	conv, ordered, err := sqlutil.ConvertNamedToPgPlaceholders(condition, namedArgs)
 	if err != nil {
-		// fall back to original for now; store as-is to surface error later at execution
-		qb.wheres = append(qb.wheres, condition)
+		qb.setError(err)
 		return qb
 	}
 	qb.wheres = append(qb.wheres, conv)
@@ -265,9 +265,7 @@ func (qb *QueryBuilder) Raw(sql string, args ...any) *QueryBuilder {
 func (qb *QueryBuilder) RawNamed(sql string, namedArgs map[string]any) *QueryBuilder {
 	conv, ordered, err := sqlutil.ConvertNamedToPgPlaceholders(sql, namedArgs)
 	if err != nil {
-		// store original; execution will likely fail which is acceptable for visibility
-		qb.raw = sql
-		qb.isRaw = true
+		qb.setError(err)
 		return qb
 	}
 	qb.raw = conv
@@ -302,6 +300,31 @@ func (qb *QueryBuilder) OnlyTrashed() *QueryBuilder { qb.qbSoftMode = qbSoftMode
 
 // Unscoped is an alias of WithTrashed (GORM-compatible naming)
 func (qb *QueryBuilder) Unscoped() *QueryBuilder { return qb.WithTrashed() }
+
+func (qb *QueryBuilder) setError(err error) {
+	if err == nil || qb.err != nil {
+		return
+	}
+	qb.err = &ORMError{Code: ErrCodeValidation, Message: err.Error(), Internal: err}
+}
+
+func (qb *QueryBuilder) queryError() error {
+	if qb == nil {
+		return nil
+	}
+	return qb.err
+}
+
+func quoteIdentifiers(names []string) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	quoted := make([]string, len(names))
+	for i, name := range names {
+		quoted[i] = quoteQualified(name)
+	}
+	return quoted
+}
 
 func (qb *QueryBuilder) buildSelect() (string, []any) {
 	if qb.isRaw {
@@ -340,8 +363,9 @@ func (qb *QueryBuilder) buildSelect() (string, []any) {
 		where = sqlutil.ConvertQMarksToPgPlaceholders(where)
 		sb.WriteString(where)
 	}
+	args := append([]any(nil), qb.args...)
 	// keyset
-	keyset := qb.buildKeysetPredicate()
+	keyset, keysetArgs := qb.buildKeysetPredicate(len(args))
 	if keyset != "" {
 		if len(whereClauses) == 0 {
 			sb.WriteString(" WHERE ")
@@ -349,6 +373,7 @@ func (qb *QueryBuilder) buildSelect() (string, []any) {
 			sb.WriteString(" AND ")
 		}
 		sb.WriteString(keyset)
+		args = append(args, keysetArgs...)
 	}
 	if qb.orderBy != "" {
 		sb.WriteString(" ORDER BY ")
@@ -362,7 +387,7 @@ func (qb *QueryBuilder) buildSelect() (string, []any) {
 		sb.WriteString(" OFFSET ")
 		sb.WriteString(strconv.Itoa(qb.offset))
 	}
-	return sb.String(), qb.args
+	return sb.String(), args
 }
 
 // addTypeCastsToPlaceholders appends ::PGTYPE to $n placeholders based on arg types when not already cast
@@ -428,6 +453,9 @@ func pgTypeForArg(a any) string {
 
 // Find runs the query and scans into dest (slice pointer)
 func (qb *QueryBuilder) Find(ctx context.Context, dest any) error {
+	if err := qb.queryError(); err != nil {
+		return err
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -627,6 +655,9 @@ func (qb *QueryBuilder) buildDelete() (string, []any) {
 
 // Delete executes a DELETE FROM ... WHERE ... and returns rows affected
 func (qb *QueryBuilder) Delete(ctx context.Context) (int64, error) {
+	if err := qb.queryError(); err != nil {
+		return 0, err
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -681,6 +712,9 @@ func (qb *QueryBuilder) HardDelete() *QueryBuilder {
 
 // Exec executes a raw statement
 func (qb *QueryBuilder) Exec(ctx context.Context) error {
+	if err := qb.queryError(); err != nil {
+		return err
+	}
 	if !qb.isRaw {
 		return errors.New("Exec only allowed with Raw query")
 	}
@@ -751,7 +785,7 @@ func (qb *QueryBuilder) buildInsert() (string, []any) {
 	sb.WriteString(qb.table)
 	if len(qb.insertColumns) > 0 {
 		sb.WriteString(" (")
-		sb.WriteString(strings.Join(qb.insertColumns, ", "))
+		sb.WriteString(strings.Join(quoteIdentifiers(qb.insertColumns), ", "))
 		sb.WriteString(")")
 	}
 	sb.WriteString(" VALUES ")
@@ -780,7 +814,7 @@ func (qb *QueryBuilder) buildInsert() (string, []any) {
 	}
 	if len(qb.conflictCols) > 0 {
 		sb.WriteString(" ON CONFLICT (")
-		sb.WriteString(strings.Join(qb.conflictCols, ", "))
+		sb.WriteString(strings.Join(quoteIdentifiers(qb.conflictCols), ", "))
 		sb.WriteString(") ")
 		if qb.updateSetExpr != "" {
 			sb.WriteString("DO UPDATE SET ")
@@ -797,12 +831,15 @@ func (qb *QueryBuilder) buildInsert() (string, []any) {
 	}
 	if len(qb.returningCols) > 0 {
 		sb.WriteString(" RETURNING ")
-		sb.WriteString(strings.Join(qb.returningCols, ", "))
+		sb.WriteString(strings.Join(quoteIdentifiers(qb.returningCols), ", "))
 	}
 	return sb.String(), args
 }
 
 func (qb *QueryBuilder) ExecInsert(ctx context.Context, dest any) (int64, error) {
+	if err := qb.queryError(); err != nil {
+		return 0, err
+	}
 	if qb.op != "insert" {
 		return 0, errors.New("not an insert operation")
 	}
@@ -925,12 +962,15 @@ func (qb *QueryBuilder) buildUpdate() (string, []any) {
 	}
 	if len(qb.returningCols) > 0 {
 		sb.WriteString(" RETURNING ")
-		sb.WriteString(strings.Join(qb.returningCols, ", "))
+		sb.WriteString(strings.Join(quoteIdentifiers(qb.returningCols), ", "))
 	}
 	return sb.String(), args
 }
 
 func (qb *QueryBuilder) ExecUpdate(ctx context.Context, dest any) (int64, error) {
+	if err := qb.queryError(); err != nil {
+		return 0, err
+	}
 	if qb.op != "update" {
 		return 0, errors.New("not an update operation")
 	}
@@ -1062,7 +1102,7 @@ func (qb *QueryBuilder) UpdateStructByPK(ctx context.Context, entity any, pkColu
 			id = fv
 			continue
 		}
-		sets = append(sets, fmt.Sprintf("%s = ?", col))
+		sets = append(sets, fmt.Sprintf("%s = ?", quoteQualified(col)))
 		args = append(args, fv)
 	}
 	if id == nil {
@@ -1071,14 +1111,14 @@ func (qb *QueryBuilder) UpdateStructByPK(ctx context.Context, entity any, pkColu
 	qb.op = "update"
 	qb.updateSetExpr = strings.Join(sets, ", ")
 	qb.updateSetArgs = args
-	qb.Where(""+pkColumn+" = ?", id)
+	qb.Where(quoteQualified(pkColumn)+" = ?", id)
 	return qb.ExecUpdate(ctx, nil)
 }
 
-func (qb *QueryBuilder) buildKeysetPredicate() string {
+func (qb *QueryBuilder) buildKeysetPredicate(argBase int) (string, []any) {
 	// Only handle when orderBy references the same column
 	if qb.afterColumn == "" && qb.beforeColumn == "" {
-		return ""
+		return "", nil
 	}
 	// detect direction
 	dir := "asc"
@@ -1093,12 +1133,15 @@ func (qb *QueryBuilder) buildKeysetPredicate() string {
 		if dir == "desc" {
 			cmp = "<"
 		}
-		sb.WriteString(qb.afterColumn)
+		sb.WriteString(quoteQualified(qb.afterColumn))
 		sb.WriteByte(' ')
 		sb.WriteString(cmp)
 		sb.WriteString(" $")
-		sb.WriteString(strconv.Itoa(len(qb.args) + 1))
-		qb.args = append(qb.args, qb.afterValue)
+		sb.WriteString(strconv.Itoa(argBase + 1))
+	}
+	args := make([]any, 0, 2)
+	if qb.afterColumn != "" {
+		args = append(args, qb.afterValue)
 	}
 	if qb.beforeColumn != "" {
 		if sb.Len() > 0 {
@@ -1108,12 +1151,12 @@ func (qb *QueryBuilder) buildKeysetPredicate() string {
 		if dir == "desc" {
 			cmp = ">"
 		}
-		sb.WriteString(qb.beforeColumn)
+		sb.WriteString(quoteQualified(qb.beforeColumn))
 		sb.WriteByte(' ')
 		sb.WriteString(cmp)
 		sb.WriteString(" $")
-		sb.WriteString(strconv.Itoa(len(qb.args) + 1))
-		qb.args = append(qb.args, qb.beforeValue)
+		sb.WriteString(strconv.Itoa(argBase + len(args) + 1))
+		args = append(args, qb.beforeValue)
 	}
-	return sb.String()
+	return sb.String(), args
 }

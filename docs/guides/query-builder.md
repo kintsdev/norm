@@ -1,5 +1,9 @@
 ## Query Builder
 
+`QueryBuilder` is mutable and not goroutine-safe. Build a fresh chain per query instead of reusing the same builder across concurrent goroutines.
+
+`Table`, `Join`, `OrderBy`, `Set`, and `Raw` accept SQL fragments. Do not pass untrusted user input to these methods. Use placeholders for values, and prefer `TableQ` / `SelectQ` / `SelectQI` when you need identifier quoting.
+
 Select:
 
 ```go
@@ -36,6 +40,8 @@ Keyset pagination helpers:
 ```go
 _ = db.Query().Table("users").OrderBy("id ASC").After("id", 123).Limit(20).Find(ctx, &rows)
 ```
+
+`After` / `Before`, `Insert`, `Returning`, and `OnConflict` are intended for column identifiers and are quoted automatically.
 
 Read routing:
 

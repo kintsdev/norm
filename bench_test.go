@@ -76,7 +76,7 @@ func BenchmarkQueryBuilderKeysetPredicate(b *testing.B) {
 			OrderBy("id ASC").
 			After("id", 100).
 			Before("id", 1000)
-		_ = qb.buildKeysetPredicate()
+		_, _ = qb.buildKeysetPredicate(0)
 	}
 }
 

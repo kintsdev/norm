@@ -142,7 +142,7 @@ func (r *repo[T]) Create(ctx context.Context, entity *T) error {
 			if strings.Contains(orm, "default:") && fv.IsZero() {
 				continue
 			}
-			cols = append(cols, col)
+			cols = append(cols, quoteQualified(col))
 			placeholders = append(placeholders, fmt.Sprintf("$%d", idx))
 			args = append(args, fv.Interface())
 			idx++
@@ -265,14 +265,15 @@ func (r *repo[T]) Update(ctx context.Context, entity *T) error {
 		}
 		// optimistic locking: version column gets incremented
 		if strings.EqualFold(col, mapper.VersionColumn) && mapper.VersionColumn != "" {
-			sets = append(sets, fmt.Sprintf("%s = %s + 1", col, col))
+			quoted := quoteQualified(col)
+			sets = append(sets, fmt.Sprintf("%s = %s + 1", quoted, quoted))
 			continue
 		}
 		if onUpdateNow[col] {
-			sets = append(sets, fmt.Sprintf("%s = NOW()", col))
+			sets = append(sets, fmt.Sprintf("%s = NOW()", quoteQualified(col)))
 			continue
 		}
-		sets = append(sets, fmt.Sprintf("%s = $%d", col, idx))
+		sets = append(sets, fmt.Sprintf("%s = $%d", quoteQualified(col), idx))
 		args = append(args, v)
 		idx++
 	}
@@ -284,7 +285,7 @@ func (r *repo[T]) Update(ctx context.Context, entity *T) error {
 		// read current version value from entity
 		curVersion := reflect.Indirect(reflect.ValueOf(entity)).FieldByNameFunc(func(n string) bool { return strings.EqualFold(core.ToSnakeCase(n), mapper.VersionColumn) }).Interface()
 		args = append(args, id, curVersion)
-		query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = $%d AND %s = $%d", r.tableName(), strings.Join(sets, ", "), mapper.PrimaryColumn, idx, mapper.VersionColumn, idx+1)
+		query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = $%d AND %s = $%d", r.tableName(), strings.Join(sets, ", "), quoteQualified(mapper.PrimaryColumn), idx, quoteQualified(mapper.VersionColumn), idx+1)
 		tag, err := r.exec.Exec(ctx, query, args...)
 		if err != nil {
 			return wrapPgError(err, query, args)
@@ -296,7 +297,7 @@ func (r *repo[T]) Update(ctx context.Context, entity *T) error {
 		return nil
 	}
 	args = append(args, id)
-	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = $%d", r.tableName(), strings.Join(sets, ", "), mapper.PrimaryColumn, idx)
+	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = $%d", r.tableName(), strings.Join(sets, ", "), quoteQualified(mapper.PrimaryColumn), idx)
 	_, err := r.exec.Exec(ctx, query, args...)
 	if err != nil {
 		return wrapPgError(err, query, args)
@@ -325,9 +326,9 @@ func (r *repo[T]) UpdatePartial(ctx context.Context, id any, fields map[string]a
 		}
 		sets := make([]string, 0, len(onUpdateNow))
 		for col := range onUpdateNow {
-			sets = append(sets, fmt.Sprintf("%s = NOW()", col))
+			sets = append(sets, fmt.Sprintf("%s = NOW()", quoteQualified(col)))
 		}
-		query := fmt.Sprintf("UPDATE %s SET %s WHERE id = $1", r.tableName(), strings.Join(sets, ", "))
+		query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = $1", r.tableName(), strings.Join(sets, ", "), quoteQualified("id"))
 		_, err := r.exec.Exec(ctx, query, id)
 		return err
 	}
@@ -336,7 +337,7 @@ func (r *repo[T]) UpdatePartial(ctx context.Context, id any, fields map[string]a
 	args := make([]any, 0, len(fields)+1)
 	provided := map[string]struct{}{}
 	for col, v := range fields {
-		sets = append(sets, fmt.Sprintf("%s = $%d", col, idx))
+		sets = append(sets, fmt.Sprintf("%s = $%d", quoteQualified(col), idx))
 		args = append(args, v)
 		idx++
 		provided[strings.ToLower(col)] = struct{}{}
@@ -344,11 +345,11 @@ func (r *repo[T]) UpdatePartial(ctx context.Context, id any, fields map[string]a
 	// add NOW() for on_update columns not explicitly provided
 	for col := range onUpdateNow {
 		if _, ok := provided[strings.ToLower(col)]; !ok {
-			sets = append(sets, fmt.Sprintf("%s = NOW()", col))
+			sets = append(sets, fmt.Sprintf("%s = NOW()", quoteQualified(col)))
 		}
 	}
 	args = append(args, id)
-	query := fmt.Sprintf("UPDATE %s SET %s WHERE id = $%d", r.tableName(), strings.Join(sets, ", "), idx)
+	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = $%d", r.tableName(), strings.Join(sets, ", "), quoteQualified("id"), idx)
 	_, err := r.exec.Exec(ctx, query, args...)
 	return err
 }
@@ -716,16 +717,17 @@ func (r *repo[T]) Upsert(ctx context.Context, entity *T, conflictCols []string, 
 		if mapper.AutoIncrement && strings.EqualFold(col, mapper.PrimaryColumn) {
 			continue
 		}
-		cols = append(cols, col)
+		cols = append(cols, quoteQualified(col))
 		placeholders = append(placeholders, fmt.Sprintf("$%d", idx))
 		args = append(args, val.Field(i).Interface())
 		idx++
 	}
 	setParts := make([]string, 0, len(updateCols))
 	for _, c := range updateCols {
-		setParts = append(setParts, fmt.Sprintf("%s = EXCLUDED.%s", c, c))
+		quoted := quoteQualified(c)
+		setParts = append(setParts, fmt.Sprintf("%s = EXCLUDED.%s", quoted, quoted))
 	}
-	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO UPDATE SET %s", r.tableName(), strings.Join(cols, ", "), strings.Join(placeholders, ", "), strings.Join(conflictCols, ", "), strings.Join(setParts, ", "))
+	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO UPDATE SET %s", r.tableName(), strings.Join(cols, ", "), strings.Join(placeholders, ", "), strings.Join(quoteIdentifiers(conflictCols), ", "), strings.Join(setParts, ", "))
 	_, err := r.exec.Exec(ctx, query, args...)
 	if err != nil {
 		return wrapPgError(err, query, args)
